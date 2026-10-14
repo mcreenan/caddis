@@ -64,4 +64,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: v${{ needs.tag.outputs.version }}
-        run: gh release create "$TAG" installers/* --verify-tag --latest --title "Caddis $TAG" --generate-notes
+        # Start the notes from the previous stable release; otherwise GitHub picks the rolling `nightly` tag.
+        run: |
+          previous=$(gh release list --exclude-pre-releases --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // empty')
+          gh release create "$TAG" installers/* --verify-tag --latest --title "Caddis $TAG" \
+            --generate-notes ${previous:+--notes-start-tag "$previous"}

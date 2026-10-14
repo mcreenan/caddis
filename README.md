@@ -2,6 +2,10 @@
 
 Caddis is a desktop app where each window is one Claude session, and the window itself is the canvas. Describe what you want and Claude builds it live: a page, a 2D drawing surface or a 3D scene. You keep chatting to change it.
 
+![The opening screen, asking "What should we make?" above a prompt with model, effort and working-directory pickers](docs/images/start-screen.png)
+
+![A 3D solar system built by Claude, with the session history on the right and the prompt along the bottom](docs/images/canvas-session.png)
+
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code), installed and logged in. A Pro or Max subscription works (`claude login`), and no API key is needed. On a machine without an interactive login, set `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
