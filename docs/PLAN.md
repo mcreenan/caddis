@@ -15,7 +15,7 @@ The canvas is a **by-product of the session**. It is persisted with the session 
 | Canvas model | **Resources held by the core** (`index.html`, `*.css`, `*.js` modules, assets) and **applied in place** by a runtime in the frame. There is no file watching, and a page reload is only an explicit fallback. |
 | Tools | 20 in-process MCP tools across resources, canvas, data, events, chrome and stats (§2). Every write returns the errors and warnings it caused. |
 | State | A per-session **data store** that both the agent and the page read and write reactively. Page activity flows back to the agent. |
-| Chrome | First-class tools (`chrome_get/set/reset`) with clamped props echoed back. The page can call `canvas.chrome.set` through the same clamps. An immutable base, a safe mode, and an undo that spans chrome and resources. |
+| Chrome | First-class tools (`chrome_get/set/reset`) with clamped props echoed back. The page can call `canvas.chrome.set` through the same clamps. An immutable base, a host-owned titlebar with reset and undo, and an undo that spans chrome and resources. |
 | Sandbox | An iframe with `sandbox="allow-scripts …"` and **no `allow-same-origin`**, so it gets an opaque origin. In Electron it sits on the `canvas://` scheme and runs as an out-of-process iframe. **Network is allowed.** |
 | Monitoring | The runtime collects fps, heap, three.js `renderer.info`, GL contexts and live timers/listeners/rAF. A watchdog flags leaks and fps collapse in write results and in the UI. |
 
@@ -79,12 +79,14 @@ Why not the file-backed design from the draft? Watching a directory implies relo
 - **Clamps**:
   - Every value is validated or clamped, and at least 90 % of each axis must stay on screen.
   - The result echoes the **effective** props, the on-screen rect and a note per clamp ("opacity 0.3 clamped to 0.6"). The system prompt names these tools explicitly.
-- `canvas.chrome.set/reset` from the page goes through the same function and returns the same result. User changes from safe mode use it too.
-- **Escape hatch**: Ctrl/Cmd+Shift+Esc, caught in Electron main via `before-input-event` so it works while the OOPIF has focus, or the ⎋ button in the corner. It opens a safe mode rendered from **immutable base values**, with:
-  - Undo/redo (labelled), reset chrome, hide/show/reload/clear canvas, and new window.
-  - The base history and prompt, so the session stays usable.
+- `canvas.chrome.set/reset` from the page goes through the same function and returns the same result. "Reset overlay style" from the titlebar menu uses it too.
+- **Host titlebar** (always on top, never styleable): `titleBarStyle: "hidden"` keeps the OS window controls (traffic lights on macOS, `titleBarOverlay` buttons on Windows/Linux); the renderer fills the rest. It has:
+  - A menu button (Windows/Linux/web) with File, Canvas and View submenus. On macOS the native menu bar carries the same items.
+  - Undo/redo (labelled with the next change), a show/hide toggle for the overlay, and a normal/minimised toggle for the history panel. `Ctrl/Cmd+\` also toggles it; it is caught in Electron main via `before-input-event` so it works while the OOPIF has focus.
+  - "Reset overlay style" returns the chrome to its **immutable base values**; "Reload/Clear canvas" recover a broken page.
+  - A status readout: agent status, fps (3D), canvas file count and size, data store size, memory (canvas process in Electron, else JS heap), CPU (Electron) and watchdog warnings.
 - Undo is one stack across mode, resources and chrome (100 entries, persisted).
-- **History mini mode** is a 40 px button at the panel's anchor. It shows the agent's status and a badge when the watchdog has warnings, and clicking it peeks the full panel.
+- **History mini mode** is a 40 px button at the panel's anchor. It shows the agent's status and a badge when the watchdog has warnings; clicking it expands the panel. The panel has no header (status and stats are in the titlebar); the titlebar's history button and View → Expand/Minimise History switch modes as a user `chrome.set`, so it's undoable.
 
 ## 5. Monitoring
 
@@ -95,15 +97,15 @@ Why not the file-backed design from the draft? Watching a directory implies relo
 - **Watchdog**:
   - *Leak*: after each module swap, a metric is sampled for the same set of entries. If it rose on each of the last 3 swaps, that is flagged ("possible leak: dom grew 41 → 42 → 43 → 44 …").
   - *fps collapse*: after the page has reached ≥ 40 fps, < 20 fps for 3 s is flagged.
-  - Warnings are returned in the write that caused them, shown on the stats chip in the history and as a badge on the mini button, and reported by `canvas_stats`.
-- **Electron**: `canvas_stats` adds the canvas frame's OS process (pid, memory, CPU) from `app.getAppMetrics()` and `frame.osProcessId`, plus whether it is separate from the host.
+  - Warnings are returned in the write that caused them, shown in the titlebar status and as a badge on the mini history button, and reported by `canvas_stats`.
+- **Electron**: `canvas_stats` adds the canvas frame's OS process (pid, memory, CPU) from `app.getAppMetrics()` and `frame.osProcessId`, plus whether it is separate from the host. The titlebar polls the same numbers every 2 s (`ac:processStats`).
 
 ## 6. Electron-first architecture
 
 ```
 main process ── SessionManager (core: sessions, Claude provider, MCP tools, persistence) ── also used by src/server (web)
    │  IPC ac:msg (structured clone)
-BrowserWindow (one per session; host renderer: React chrome, safe mode)
+BrowserWindow (one per session; host renderer: React titlebar + chrome)
    └─ <iframe sandbox="allow-scripts …" src="canvas://app/frame/index.html">   ← OOPIF, opaque origin
          runtime.js + import map: three, three/addons/, d3, idiomorph, canvas
 ```
@@ -123,7 +125,7 @@ BrowserWindow (one per session; host renderer: React chrome, safe mode)
   - Navigation away from the host URL is blocked.
   - The permission handler allows only clipboard-write and fullscreen.
   - The frame shell is served from `protocol.handle("canvas")`, and in the web build from `/frame/`.
-- **Native features**: a directory picker for the cwd, `capturePage()` screenshots for `canvas_view`, Ctrl/Cmd+N or File → New Window for a new session window, and `--session=<id>` or `CADDIS_SESSION` to reopen a session.
+- **Native features**: a directory picker for the cwd, `capturePage()` screenshots for `canvas_view`, Ctrl/Cmd+N or File → New Window for a new session window, File → Open/Save for `.caddis` artifacts (§7), and `--session=<id>` or `CADDIS_SESSION` to reopen a session.
 - **Linux/Wayland**:
   - Electron's `auto` ozone hint keys off `XDG_SESSION_TYPE`, which shells outside the login session often lack.
   - `scripts/with-display.mjs` sets it when `WAYLAND_DISPLAY` is present. Verified on Hyprland: a native Wayland window, with WebGL working.
@@ -143,18 +145,23 @@ BrowserWindow (one per session; host renderer: React chrome, safe mode)
 
 Saves are debounced and atomic (write then rename) and flushed on quit. Electron's `dataDir` is `userData/data`; the web server uses `./data`. `CADDIS_DATA_DIR` overrides both.
 
+**Artifacts (`.caddis`)** are the portable form of a session: a zip with a checksummed `manifest.json`, `data.json`, `history.json`, `canvas/*`, Claude Code's transcript (`claude/transcript.jsonl`), files the agent wrote with Write/Edit (`workspace/*`), chrome, activity, undo and a `preview.png`. Built and parsed in `src/core/artifact.ts`.
+- **Open** creates a new session. The transcript is installed into the CLI's project directory for the session's cwd (never overwriting), and the first run resumes it with `forkSession`, so the original conversation stays untouched.
+- Workspace files are restored only into the original cwd and only where missing.
+- Electron main shows native dialogs and remembers the file for Save. The web build exchanges the file over the WebSocket (`artifact.export` / `artifact.import`).
+
 ## 8. Open questions and next steps
 
 **Decided:** restoring a canvas version does not rewind the conversation; undo covers the canvas and chrome only.
 
 **Open questions**
-1. **Export format for sharing.** The likely shape is a single HTML file with inlined resources, vendored libs, a data snapshot and a stub `canvas` API (data persisted to `localStorage`, `emit` a no-op). An MCP App (`text/html;profile=mcp-app`) is another candidate.
+1. **Standalone export for sharing.** `.caddis` artifacts (§7) need Caddis to open. A viewer-only export is still open: the likely shape is a single HTML file with inlined resources, vendored libs, a data snapshot and a stub `canvas` API (data persisted to `localStorage`, `emit` a no-op). An MCP App (`text/html;profile=mcp-app`) is another candidate.
 2. **Canvas-initiated turns.** Should `canvas.emit(…, {wake: true})` start a turn, rate-limited?
 
 **Next steps**, roughly in order:
 1. An approvals UI for non-preapproved tools.
 2. A session list and switcher.
-3. Self-contained export.
+3. Self-contained HTML export (`.caddis` save/open is done).
 4. "Point at element" context.
 5. Packaging (electron-builder, fuses, asar).
 6. Pairing or auth before the web target leaves trusted networks.

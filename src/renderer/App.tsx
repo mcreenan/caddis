@@ -1,38 +1,26 @@
 import { useEffect, useRef } from "react";
-import { SAFE_Z } from "../shared/chrome";
 import { ChromeLayer } from "./components/Chrome";
-import { SafeMode } from "./components/SafeMode";
 import { StartCard } from "./components/StartCard";
-import { attachStage, toggleSafe } from "./controller";
+import { TitleBar, Toast } from "./components/TitleBar";
+import { attachStage } from "./controller";
 import { useUi } from "./store";
 
 function Stage() {
   const ref = useRef<HTMLDivElement>(null);
-  const hidden = useUi((s) => s.canvasHidden);
   useEffect(() => attachStage(ref.current!), []);
-  return <div ref={ref} className={`stage${hidden ? " hidden" : ""}`} />;
+  return <div ref={ref} className="stage" />;
 }
 
 export function App() {
-  const { phase, safe, status, connected } = useUi();
+  const { phase, connected, overlayHidden } = useUi();
   return (
     <>
+      <TitleBar />
       {phase === "session" && <Stage />}
       {phase === "start" && <StartCard />}
       {phase === "connecting" && <div className="connecting muted">Connecting…</div>}
-      {phase === "session" && !safe && <ChromeLayer />}
-      {phase === "session" && safe && <SafeMode />}
-      {phase === "session" && (
-        <button
-          className={`safe-toggle st-${status}`}
-          style={{ zIndex: SAFE_Z + 1 }}
-          title="Safe mode (Ctrl+Shift+Esc)"
-          data-testid="safe-toggle"
-          onClick={toggleSafe}
-        >
-          ⎋
-        </button>
-      )}
+      {phase === "session" && <ChromeLayer hidden={overlayHidden} />}
+      <Toast />
       {!connected && phase !== "connecting" && <div className="offline">reconnecting…</div>}
     </>
   );

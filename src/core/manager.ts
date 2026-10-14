@@ -2,9 +2,10 @@ import { existsSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PROTOCOL_VERSION, type ClientMsg, type ProviderInfo, type SessionConfig } from "../shared/protocol";
+import { parseArtifact } from "./artifact";
 import { ClaudeProvider } from "./providers/claude";
 import type { AgentProvider } from "./providers/types";
-import { SessionStore, type Client, type Session } from "./session";
+import { SessionStore, type ArtifactSource, type Client, type Session } from "./session";
 
 /**
  * The session core: providers, the session store and per-client message
@@ -44,6 +45,21 @@ export class SessionManager {
     return { provider: info.id, model, effort: (c.effort ?? "") as SessionConfig["effort"], cwd };
   }
 
+  /**
+   * Open a `.caddis` artifact as a new session. It keeps its original working
+   * directory when that exists on this machine, else uses the default.
+   */
+  async importArtifact(buf: Buffer, source?: ArtifactSource): Promise<Session> {
+    const a = parseArtifact(buf);
+    const orig = a.manifest.session?.config;
+    const cwd = typeof orig?.cwd === "string" && existsSync(orig.cwd) && statSync(orig.cwd).isDirectory() ? orig.cwd : this.defaultCwd;
+    const providers = await this.discover();
+    const info = providers.find((p) => p.id === orig?.provider);
+    const model = info?.models.some((m) => m.id === orig?.model) ? String(orig?.model) : "";
+    const config: SessionConfig = { provider: "claude", model, effort: model ? ((orig?.effort ?? "") as SessionConfig["effort"]) : "", cwd };
+    return this.store.import(a, config, source);
+  }
+
   /** Bind a transport connection. Returns the handler for its messages and a close hook. */
   connect(client: Client) {
     let session: Session | undefined;
@@ -71,6 +87,11 @@ export class SessionManager {
           session.attach(client);
           session.prompt(msg.prompt);
           return;
+        }
+        case "artifact.import": {
+          const name = typeof msg.name === "string" ? msg.name.slice(0, 200) : undefined;
+          const s = await this.importArtifact(Buffer.from(String(msg.data ?? ""), "base64"), { name });
+          return client.send({ t: "artifact.opened", sessionId: s.id });
         }
       }
       // Frame reports from a window without a session are harmless; drop them.
@@ -124,6 +145,10 @@ export class SessionManager {
           return s.clearCanvas();
         case "canvas.reload":
           return void s.reload();
+        case "artifact.export": {
+          const { buffer } = await s.exportArtifact();
+          return client.send({ t: "artifact.file", name: s.artifactName, data: buffer.toString("base64") });
+        }
       }
     };
 

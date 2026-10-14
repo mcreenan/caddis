@@ -1,6 +1,6 @@
 import { ANCHORS, FONTS, SHADOWS, type Anchor, type ChromeApplyResult, type ChromeComponent, type ChromeProps } from "./protocol";
 
-/** Immutable base values. Safe mode always renders these. */
+/** Immutable base values; "Reset overlay style" returns to these. */
 export const CHROME_BASE: Record<ChromeComponent, Required<Omit<ChromeProps, "height" | "mode">> & { height?: number; mode?: "full" | "mini" }> = {
   prompt: {
     anchor: "bottom",
@@ -58,7 +58,8 @@ export const PROMPT_EST_HEIGHT = 54;
 
 /** z-index of chrome. The canvas iframe sits at z-index 0 and can never paint above it. */
 export const CHROME_Z = 2147483000;
-export const SAFE_Z = 2147483600;
+/** z-index of host-owned UI (titlebar, menus, toasts), above anything the agent can style. */
+export const HOST_Z = 2147483600;
 
 export const FONT_STACKS: Record<(typeof FONTS)[number], string> = {
   system: 'system-ui, -apple-system, "Segoe UI", sans-serif',

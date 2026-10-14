@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { CHROME_MARGIN, CHROME_Z, effectiveProps, layoutChrome, safeCssProps, type Rect } from "../../shared/chrome";
 import type { ChromeApplyResult, ChromeComponent } from "../../shared/protocol";
-import { send } from "../controller";
+import { TITLEBAR_H, send, setHistoryMode } from "../controller";
 import { useUi } from "../store";
-import { HistoryList, StatsChip, statusText } from "./History";
+import { HistoryList, statusText } from "./History";
 
 /**
  * The agent-styleable chrome: the floating prompt and the history panel.
@@ -11,10 +11,11 @@ import { HistoryList, StatsChip, statusText } from "./History";
  * so whatever the core stored, the result stays usable.
  */
 
+/** The area below the titlebar, where the canvas and the overlay live. */
 export function useViewport() {
-  const [vp, setVp] = useState({ w: innerWidth, h: innerHeight });
+  const [vp, setVp] = useState({ w: innerWidth, h: innerHeight - TITLEBAR_H });
   useEffect(() => {
-    const on = () => setVp({ w: innerWidth, h: innerHeight });
+    const on = () => setVp({ w: innerWidth, h: innerHeight - TITLEBAR_H });
     addEventListener("resize", on);
     return () => removeEventListener("resize", on);
   }, []);
@@ -128,10 +129,8 @@ export function HistoryPanel() {
   const applied = useApplied("history");
   const { history, status, statusDetail, stats } = useUi();
   const { w, h } = useViewport();
-  const [peek, setPeek] = useState(false);
   const rect = layoutChrome("history", applied, w, h);
-  const mini = applied.mode === "mini" && !peek;
-  if (mini) {
+  if (applied.mode === "mini") {
     const r = miniRect(rect, applied.anchor);
     const warn = stats?.warnings.length ?? 0;
     return (
@@ -140,7 +139,7 @@ export function HistoryPanel() {
         data-testid="history-mini"
         style={{ ...chromeStyle(applied), left: r.x, top: r.y }}
         title={`${statusText(status, statusDetail)}${warn ? ` · ${warn} watchdog warning(s)` : ""} — click to show history`}
-        onClick={() => setPeek(true)}
+        onClick={() => setHistoryMode("full")}
       >
         <span className="dot" />
         {warn > 0 && <span className="mini-badge">{warn}</span>}
@@ -149,27 +148,15 @@ export function HistoryPanel() {
   }
   return (
     <section className={`chrome-box chrome-history st-${status}`} data-testid="history" style={{ ...chromeStyle(applied, rect), height: rect.height }}>
-      <header>
-        <span className="dot" />
-        <span className="h-title">Agent</span>
-        <span className="h-status">{statusText(status, statusDetail)}</span>
-        <StatsChip stats={stats} />
-        <button
-          className="icon"
-          title={peek ? "Back to mini" : "Collapse to a button"}
-          onClick={() => (peek ? setPeek(false) : send({ t: "chrome.set", component: "history", props: { mode: "mini" } }))}
-        >
-          –
-        </button>
-      </header>
       <HistoryList items={history} />
     </section>
   );
 }
 
-export function ChromeLayer() {
+/** Stays mounted while hidden so a half-typed prompt survives. */
+export function ChromeLayer({ hidden }: { hidden?: boolean }) {
   return (
-    <div className="chrome-layer" style={{ zIndex: CHROME_Z, ["--margin" as string]: `${CHROME_MARGIN}px` }}>
+    <div className="chrome-layer" hidden={hidden} data-testid="overlay" style={{ zIndex: CHROME_Z, ["--margin" as string]: `${CHROME_MARGIN}px` }}>
       <HistoryPanel />
       <PromptBar />
     </div>

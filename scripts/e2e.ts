@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync
 import os from "node:os";
 import path from "node:path";
 import { _electron, chromium, type ElectronApplication, type Frame, type Page } from "playwright-core";
+import { parseArtifact } from "../src/core/artifact";
 
 const TARGET = process.env.TARGET === "web" ? "web" : "electron";
 const BASE = process.env.BASE ?? "http://127.0.0.1:5317";
@@ -182,7 +183,7 @@ async function main() {
   const leaky = await fe<any>(`__ac.stats()`);
   summary.leak = leaky.warnings;
   check("watchdog flags a deliberately leaky module", leaky.warnings.some((w: string) => /possible leak: dom/.test(w)), leaky.warnings);
-  await page.waitForFunction(() => document.querySelector('[data-testid="stats-chip"].warn'), null, { timeout: 5000 }).then(
+  await page.waitForFunction(() => document.querySelector('[data-testid="titlebar"] [data-testid="warnings"]'), null, { timeout: 5000 }).then(
     () => check("UI shows the warning indicator", true),
     () => check("UI shows the warning indicator", false),
   );
@@ -253,20 +254,39 @@ async function main() {
   check("history is mini", (await page.locator('[data-testid="history-mini"]').count()) === 1);
   await shot("6-chrome");
 
-  // ---------------------------------------------------------------- 7. safe mode: reset + undo
-  await page.keyboard.press("Control+Shift+Escape");
-  await page.waitForSelector('[data-testid="safe"]', { timeout: 5000 });
-  await shot("7-safe-mode");
-  await page.locator('[data-testid="safe"]').getByRole("button", { name: /reset chrome/i }).click();
+  // ---------------------------------------------------------------- 7. titlebar: status, overlay toggle, reset + undo
+  const tb = page.locator('[data-testid="titlebar"]');
+  await page.waitForSelector('[data-testid="titlebar"] [data-testid="fps"]', { timeout: 5000 }).catch(() => {});
+  const statusText = (await tb.locator('[data-testid="status"]').textContent()) ?? "";
+  summary.titlebarStatus = statusText;
+  check("titlebar shows fps (3d), files and data size", (await tb.locator('[data-testid="fps"], [data-testid="files"], [data-testid="data-size"]').count()) === 3 && /\d+fps/.test(statusText), statusText);
+  if (app) {
+    await page.waitForSelector('[data-testid="titlebar"] [data-testid="cpu"]', { timeout: 5000 }).catch(() => {});
+    check("titlebar shows canvas memory and cpu (electron)", (await tb.locator('[data-testid="mem"], [data-testid="cpu"]').count()) === 2);
+  }
+  await tb.locator('[data-testid="overlay-toggle"]').click();
+  check("overlay toggle hides the prompt and history", !(await page.locator('[data-testid="prompt"]').isVisible()));
+  await page.keyboard.press("Control+Backslash");
+  check("Ctrl+\\ shows the overlay again", await page.locator('[data-testid="prompt"]').isVisible());
+  await tb.getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("menuitem", { name: /^view/i }).hover();
+  await shot("7-titlebar-menu");
+  await page.locator('[data-testid="reset-overlay"]').click();
   await sleep(500);
   const reset = session().chrome;
-  check("safe mode: reset chrome", !Object.keys(reset.prompt).length && !Object.keys(reset.history).length, reset);
-  await page.locator('[data-testid="safe"]').getByRole("button", { name: /^undo/i }).click();
+  check("menu: reset overlay style", !Object.keys(reset.prompt).length && !Object.keys(reset.history).length, reset);
+  await tb.locator('[data-testid="undo"]').click();
   await sleep(500);
   const undone = session().chrome;
-  check("undo restores the agent's chrome", undone.prompt?.anchor === "top", undone);
-  await page.keyboard.press("Control+Shift+Escape");
-  await sleep(300);
+  check("titlebar undo restores the agent's chrome", undone.prompt?.anchor === "top", undone);
+  await tb.locator('[data-testid="history-toggle"]').click();
+  await page.waitForSelector('[data-testid="history"]', { timeout: 5000 }).catch(() => {});
+  for (let i = 0; i < 25 && session().chrome.history?.mode !== "full"; i++) await sleep(200);
+  check("titlebar expands the minimised history", session().chrome.history?.mode === "full" && (await page.locator('[data-testid="history"]').isVisible()));
+  await tb.locator('[data-testid="history-toggle"]').click();
+  await page.waitForSelector('[data-testid="history-mini"]', { timeout: 5000 }).catch(() => {});
+  for (let i = 0; i < 25 && session().chrome.history?.mode !== "mini"; i++) await sleep(200);
+  check("titlebar minimises the history again", session().chrome.history?.mode === "mini" && (await page.locator('[data-testid="history-mini"]').isVisible()));
 
   // ---------------------------------------------------------------- 8. persistence across restart
   await close();
@@ -283,6 +303,67 @@ async function main() {
   const pb = await page.locator('[data-testid="prompt"]').boundingBox();
   check("restart restores the chrome (prompt at top)", !!pb && pb.y < 120, pb);
   await shot("8-restored");
+
+  // ---------------------------------------------------------------- 9. save as a .caddis artifact, open it, keep talking
+  const file = path.join(OUT, "session.caddis");
+  const openFileMenu = async () => {
+    await page.locator('[data-testid="titlebar"]').getByRole("button", { name: "Menu" }).click();
+    await page.getByRole("menuitem", { name: /^file/i }).hover();
+  };
+  if (app) {
+    // Native dialogs can't be driven by Playwright; answer them from main.
+    await app.evaluate(({ dialog }, f) => {
+      (dialog as any).showSaveDialog = async () => ({ canceled: false, filePath: f });
+      (dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [f] });
+    }, file);
+    await page.keyboard.press("Control+S");
+    for (let i = 0; i < 50 && !existsSync(file); i++) await sleep(200);
+  } else {
+    await openFileMenu();
+    const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: /^save(?! as)/i }).click()]);
+    await dl.saveAs(file);
+  }
+  check("saved a .caddis file", existsSync(file));
+  const art = parseArtifact(readFileSync(file));
+  const paths = art.manifest.files.map((f) => f.path);
+  summary.artifact = { files: paths, notes: art.manifest.notes, title: art.manifest.title };
+  check(
+    "artifact has manifest, data, history, canvas and transcript",
+    ["data.json", "history.json", "canvas/scene.js", "claude/transcript.jsonl"].every((p) => paths.includes(p)) && (art.data.tasks as unknown[] | undefined)?.length === 4,
+    paths,
+  );
+  check("artifact has a preview image", paths.includes("preview.png"));
+  await page.waitForSelector('[data-testid="toast"]', { timeout: 5000 }).then(
+    () => check("UI confirms the save", true),
+    () => check("UI confirms the save", false),
+  );
+
+  const origProviderSession = session().providerSessionId;
+  if (app) {
+    const [win] = await Promise.all([app.waitForEvent("window"), page.keyboard.press("Control+O")]);
+    page = win;
+  } else {
+    await openFileMenu();
+    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByRole("menuitem", { name: /^open/i }).click()]);
+    const [tab] = await Promise.all([page.context().waitForEvent("page"), chooser.setFiles(file)]);
+    page = tab;
+  }
+  await page.waitForURL(/[?&]s=/, { timeout: 30_000 });
+  const openedId = new URL(page.url()).searchParams.get("s")!;
+  check("opened as a new session", !!openedId && openedId !== sessionId, openedId);
+  sessionId = openedId;
+  const f3 = await frame();
+  await sleep(1500);
+  const opened = (await f3.evaluate(`({ mode: __ac.rt.mode, entries: [...__ac.entries.keys()], text: document.body.innerText.slice(0, 400) })`)) as any;
+  check("opened artifact restores the scene and tasks", opened.mode === "3d" && opened.entries.includes("scene.js") && opened.text.includes(firstTitle), opened.entries);
+  const hist9 = session().history.length;
+  await turn("What was the very first thing I asked you to build in this conversation? Answer in a few words.");
+  const reply9 = session().history.slice(hist9).filter((h: any) => h.kind === "assistant").map((h: any) => h.text).join(" ");
+  summary.turn9 = reply9;
+  check("Claude remembers the conversation after opening", /cube/i.test(reply9), reply9);
+  const forked = session().providerSessionId;
+  check("opened session forks Claude's session", !!forked && forked !== origProviderSession, { origProviderSession, forked });
+  await shot("9-opened");
   await close();
 }
 

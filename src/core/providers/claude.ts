@@ -108,6 +108,7 @@ export class ClaudeProvider implements AgentProvider {
         effort: config.effort || undefined,
         systemPrompt: ctx.systemPrompt,
         resume: ctx.resumeId,
+        forkSession: ctx.resumeId ? ctx.fork : undefined,
         includePartialMessages: true,
         mcpServers: { [MCP_SERVER_NAME]: createCanvasMcpServer(ctx.tools) },
         allowedTools: [...PREAPPROVED, ...canvasTools],

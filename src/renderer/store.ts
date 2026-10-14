@@ -30,8 +30,14 @@ export interface UiState {
   undo: UndoInfo;
   stats?: CanvasStats;
   error?: string;
-  safe: boolean;
-  canvasHidden: boolean;
+  /** The prompt and history overlay is hidden (titlebar toggle, Ctrl/Cmd+Backslash). */
+  overlayHidden: boolean;
+  /** Electron: the canvas process's memory/CPU, polled while a session is open. */
+  proc?: CanvasStats["process"];
+  /** Artifact file this session was saved to or opened from. */
+  file?: string;
+  /** Short-lived notice ("Saved x.caddis"). */
+  toast?: string;
 }
 
 export const useUi = create<UiState>(() => ({
@@ -46,8 +52,7 @@ export const useUi = create<UiState>(() => ({
   data: {},
   chrome: emptyChrome(),
   undo: { undo: 0, redo: 0 },
-  safe: false,
-  canvasHidden: false,
+  overlayHidden: false,
 }));
 
 const set = useUi.setState;
@@ -73,6 +78,7 @@ export function reduce(msg: ServerMsg) {
         chrome: s.chrome,
         undo: s.undo,
         stats: s.stats,
+        file: s.file,
         error: undefined,
       });
     }
@@ -116,6 +122,8 @@ export function reduce(msg: ServerMsg) {
       return set({ undo: msg.undo });
     case "stats":
       return set({ stats: msg.stats });
+    case "artifact.saved":
+      return set({ file: msg.name, toast: `Saved ${msg.name}` });
     case "error":
       return set({ error: msg.message });
   }

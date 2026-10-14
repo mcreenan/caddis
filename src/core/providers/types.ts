@@ -17,6 +17,8 @@ export interface ProviderContext {
   systemPrompt: string;
   /** Provider-native session id to resume, if any. */
   resumeId?: string;
+  /** Resume `resumeId` into a new provider session rather than continuing it (an imported artifact). */
+  fork?: boolean;
   /** Canvas tools, provider-agnostic; each provider exposes them its own way. */
   tools: ToolSet;
   emit: (e: ProviderEvent) => void;

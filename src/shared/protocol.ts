@@ -218,6 +218,8 @@ export interface SessionSnapshot {
   chrome: ChromeState;
   undo: UndoInfo;
   stats?: CanvasStats;
+  /** File name of the `.caddis` artifact this session was last saved to or opened from. */
+  file?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,13 +255,17 @@ export type ClientMsg =
   | { t: "frame.emit"; name: string; payload?: unknown }
   | { t: "frame.chrome"; requestId: string; component: ChromeComponent; props?: Record<string, unknown>; reset?: boolean }
   | { t: "frame.stats"; stats: CanvasStats }
-  // user actions (safe mode etc.)
+  // user actions (titlebar and menu)
   | { t: "chrome.set"; component: ChromeComponent; props: Record<string, unknown> }
   | { t: "chrome.reset"; component?: ChromeComponent }
   | { t: "undo" }
   | { t: "redo" }
   | { t: "canvas.clear" }
-  | { t: "canvas.reload" };
+  | { t: "canvas.reload" }
+  // artifacts (web; Electron main reads and writes files itself)
+  | { t: "artifact.export" }
+  /** A `.caddis` file as base64. Opens as a new session; the reply is `artifact.opened`. */
+  | { t: "artifact.import"; data: string; name?: string };
 
 export type ServerMsg =
   | { t: "welcome"; v: number; providers: ProviderInfo[]; defaultCwd: string; platform: "web" | "electron" }
@@ -280,6 +286,11 @@ export type ServerMsg =
   | { t: "chrome.state"; chrome: ChromeState }
   | { t: "undo.state"; undo: UndoInfo }
   | { t: "stats"; stats: CanvasStats }
+  /** Reply to `artifact.export`: a `.caddis` file (base64) to download. */
+  | { t: "artifact.file"; name: string; data: string }
+  | { t: "artifact.opened"; sessionId: string }
+  /** Electron: the session was saved to `name`. */
+  | { t: "artifact.saved"; name: string }
   | { t: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -293,6 +304,9 @@ export type ToFrameMsg =
   | { type: "request"; id: string; request: FrameRequest }
   | { type: "chrome.result"; id: string; result: unknown };
 
+/** Titlebar/menu actions. Electron main sends them to the focused window for native menu items and shortcuts. */
+export type UiCommand = "overlay" | "history" | "resetOverlay" | "undo" | "redo" | "reloadCanvas" | "clearCanvas";
+
 export type FromFrameMsg =
   | { type: "hello" }
   | { type: "ready"; rev: number }
@@ -303,4 +317,5 @@ export type FromFrameMsg =
   | { type: "emit"; name: string; payload?: unknown }
   | { type: "chrome"; id: string; component: ChromeComponent; props?: Record<string, unknown>; reset?: boolean }
   | { type: "stats"; stats: CanvasStats }
-  | { type: "escape" };
+  /** A host shortcut pressed while the canvas has focus (only reaches the host this way on the web). */
+  | { type: "hotkey"; key: "overlay" };

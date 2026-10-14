@@ -7,8 +7,8 @@ Bump `PROTOCOL_VERSION` on any breaking change. The core rejects a `hello` that 
 ```
  Electron BrowserWindow (or a browser tab)                 session core (Electron main, or src/server)
 ┌──────────────────────────────────────────────┐  hop 1   ┌──────────────────────────────────────┐
-│ host renderer: React chrome + safe mode      │◀────────▶│ SessionManager → Session             │
-│   prompt/history z=2147483000, safe z=…600   │ IPC ac:msg│  canvas {mode, rev, resources}      │
+│ host renderer: React titlebar + chrome       │◀────────▶│ SessionManager → Session             │
+│   prompt/history z=2147483000, host z=…600   │ IPC ac:msg│  canvas {mode, rev, resources}      │
 │ ┌──────────────────────────────────────────┐ │  or WS /ws│  data store + activity log         │
 │ │ iframe sandbox="allow-scripts …"   z=0   │ │          │  chrome overrides, undo/redo         │
 │ │ canvas://app/frame/ (web: /frame/)       │ │          │  history; Claude provider            │
@@ -86,8 +86,10 @@ The import map exposes `three`, `three/addons/…`, `d3`, `idiomorph` and `canva
 | `session.start {config, prompt}` | Create a session (`provider`, `model`, `effort`, `cwd`) and send the first prompt |
 | `prompt {text}` / `interrupt` | Send a prompt, or stop the agent |
 | `viewport {width, height}` | Feeds chrome layout, clamps and screenshots |
-| `chrome.set {component, props}` / `chrome.reset {component?}` | User changes (safe mode), through the same clamps |
-| `undo` / `redo` / `canvas.clear` / `canvas.reload` | Safe-mode actions |
+| `chrome.set {component, props}` / `chrome.reset {component?}` | User changes (titlebar menu), through the same clamps |
+| `undo` / `redo` / `canvas.clear` / `canvas.reload` | Titlebar and menu actions |
+| `artifact.export` | Web: package the session as a `.caddis` file. Answered by `artifact.file` |
+| `artifact.import {data, name?}` | Web: open a `.caddis` file (base64) as a new session. Answered by `artifact.opened` |
 | `frame.*` | Frame reports relayed by the UI. See hop 2 |
 
 **Core → client**
@@ -103,6 +105,9 @@ The import map exposes `three`, `three/addons/…`, `d3`, `idiomorph` and `canva
 | `data.changed {key, value?, deleted?, source}` | A store update from another source |
 | `frame.request {requestId, request}` | `eval`, `view`, `stats` or `dom`, answered by `frame.result` |
 | `frame.chrome.result {requestId, result}` | The reply to a page's `canvas.chrome.set` |
+| `artifact.file {name, data}` | A `.caddis` file (base64) to download |
+| `artifact.opened {sessionId}` | An artifact was opened as a new session. A window on the start card attaches to it with `hello` |
+| `artifact.saved {name}` | Electron: the session was saved to a file. `session.snapshot` carries the same name as `file` |
 | `chrome.state` / `undo.state` / `stats` / `error` | |
 
 Several clients may view one session. The most recently ready one is the **primary** and answers frame requests. All of them receive every broadcast.
@@ -130,7 +135,7 @@ Every message is `{ch: "caddis", v: 2, type, …}`. Sends use `postMessage(…, 
 | `emit {name, payload}` | |
 | `chrome {id, component, props?, reset?}` | |
 | `stats {stats}` | Every 1 s |
-| `escape` | Ctrl/Cmd+Shift+Esc pressed inside the frame (web; Electron catches it in main) |
+| `hotkey {key: "overlay"}` | `Ctrl/Cmd+\` pressed inside the frame (web; Electron catches it in main) |
 
 **Page API** (`globalThis.canvas`, or the `canvas` module):
 
@@ -192,7 +197,7 @@ ChromeProps { anchor, x, y, width, height (history), opacity, accent, background
 
 - `font` is one of `system|serif|mono|rounded`, and `shadow` is one of `none|soft|strong|glow`. Unknown keys are reported in `notes`.
 - Overrides are stored per component, and the effective props are `base ⊕ overrides`.
-- Safe mode renders from `CHROME_BASE` only.
+- "Reset overlay style" (`chrome.reset`) clears the overrides, returning to `CHROME_BASE`.
 
 ## 6. Persistence
 
@@ -200,8 +205,8 @@ ChromeProps { anchor, x, y, width, height (history), opacity, accent, background
 
 ```ts
 { v: 2, id, createdAt, config, providerSessionId, history, canvas, data, chrome,
-  undo: UndoEntry[], redo: UndoEntry[], events, eventSeq, agentCursor }
+  undo: UndoEntry[], redo: UndoEntry[], events, eventSeq, agentCursor, artifactPath?, forkOnResume? }
 UndoEntry { label, ts, mode?, res?: Record<name, Resource | null>, chrome? }
 ```
 
-Undo entries store only what changed (the previous mode, previous resources, and previous chrome), up to 100 entries. Files that aren't v2 are ignored.
+`artifactPath` (the file Save writes to) and `forkOnResume` (set after opening an artifact) are optional. Undo entries store only what changed (the previous mode, previous resources, and previous chrome), up to 100 entries. Files that aren't v2 are ignored.

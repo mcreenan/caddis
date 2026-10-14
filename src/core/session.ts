@@ -28,6 +28,7 @@ import {
   type SessionSnapshot,
   type UndoInfo,
 } from "../shared/protocol";
+import { artifactFilename, buildArtifact, installTranscript, restoreWorkspace, sessionTitle, type ParsedArtifact } from "./artifact";
 import { applyPatch } from "./dom";
 import type { AgentProvider, AgentRun, ProviderEvent } from "./providers/types";
 import { canvasSystemPrompt } from "./systemPrompt";
@@ -53,7 +54,7 @@ export interface Client {
 }
 
 /** One undoable step: the *previous* values of whatever it changed. Spans canvas and chrome. */
-interface UndoEntry {
+export interface UndoEntry {
   label: string;
   ts: number;
   mode?: CanvasMode;
@@ -62,7 +63,7 @@ interface UndoEntry {
   chrome?: ChromeState;
 }
 
-interface Persisted {
+export interface Persisted {
   v: 2;
   id: string;
   createdAt: number;
@@ -78,6 +79,15 @@ interface Persisted {
   eventSeq: number;
   /** Last event seq the agent has seen (attached to a prompt or read via events_read). */
   agentCursor: number;
+  /** Where File → Save writes (Electron), once the session has been saved or opened from a file. */
+  artifactPath?: string;
+  /** Opened from an artifact: the next run forks the imported Claude session instead of appending to it. */
+  forkOnResume?: boolean;
+}
+
+export interface ArtifactSource {
+  path?: string;
+  name?: string;
 }
 
 interface ApplyReport {
@@ -155,8 +165,100 @@ export class Session {
     return new Session(data, file, provider(data.config));
   }
 
+  /** `source.path` (Electron) becomes the Save target; `source.name` is only shown. */
+  static fromArtifact(id: string, a: ParsedArtifact, config: SessionConfig, dir: string, provider: AgentProvider, source: ArtifactSource = {}) {
+    const notes: string[] = [];
+    let providerSessionId: string | undefined;
+    const origSid = a.manifest.session?.providerSessionId;
+    if (a.transcript && origSid && installTranscript(origSid, config.cwd, a.transcript)) providerSessionId = origSid;
+    else if (origSid) notes.push("Claude's transcript could not be restored, so Claude starts this conversation fresh.");
+
+    if (a.workspace.length) {
+      if (config.cwd === a.manifest.session?.config?.cwd) {
+        const { written, kept } = restoreWorkspace(a.workspace, config.cwd);
+        if (written.length) notes.push(`Restored ${written.length} workspace file(s): ${written.join(", ")}.`);
+        if (kept.length) notes.push(`Kept ${kept.length} existing workspace file(s) as they are.`);
+      } else notes.push(`The original folder doesn't exist here, so ${a.workspace.length} workspace file(s) stay in the artifact.`);
+    }
+
+    const rev = Math.max(Number(a.manifest.canvas.rev) || 0, ...Object.values(a.resources).map((r) => r.rev));
+    const history = [...a.history];
+    const from = source.name ?? (source.path ? path.basename(source.path) : "an artifact");
+    history.push({
+      id: randomUUID(),
+      ts: Date.now(),
+      kind: "notice",
+      level: "info",
+      text: [`Opened from ${from} (saved ${new Date(a.manifest.savedAt).toLocaleString()}).`, ...notes].join(" "),
+    });
+    const s = new Session(
+      {
+        v: 2,
+        id,
+        createdAt: Date.now(),
+        config,
+        providerSessionId,
+        history,
+        canvas: { mode: a.manifest.canvas.mode, rev, resources: a.resources },
+        data: a.data,
+        chrome: a.chrome,
+        undo: a.undo.undo.slice(-UNDO_LIMIT),
+        redo: a.undo.redo.slice(-UNDO_LIMIT),
+        events: a.activity.events.slice(-EVENT_LIMIT),
+        eventSeq: a.activity.eventSeq,
+        agentCursor: a.activity.agentCursor,
+        artifactPath: source.path,
+        forkOnResume: Boolean(providerSessionId),
+      },
+      path.join(dir, `${id}.json`),
+      provider,
+    );
+    s.save();
+    return s;
+  }
+
   get id() {
     return this.d.id;
+  }
+
+  get title() {
+    return sessionTitle(this.d.history);
+  }
+
+  get artifactPath() {
+    return this.d.artifactPath;
+  }
+
+  /** Default file name for Save As. */
+  get artifactName() {
+    return this.d.artifactPath ? path.basename(this.d.artifactPath) : artifactFilename(this.title);
+  }
+
+  /** Package the session as a `.caddis` artifact, with a screenshot of the window when a viewer is open. */
+  async exportArtifact() {
+    this.flush();
+    const preview = await this.previewImage();
+    return buildArtifact(this.d, preview);
+  }
+
+  /** Remember where the session was saved (Electron's File → Save writes there next time). */
+  setArtifactPath(file: string) {
+    this.d.artifactPath = file;
+    this.save();
+    this.broadcast({ t: "artifact.saved", name: path.basename(file) });
+  }
+
+  private async previewImage(): Promise<Buffer | undefined> {
+    if (!this.ready.size) return undefined;
+    const timeout = new Promise<undefined>((r) => setTimeout(() => r(undefined), 5000));
+    const shot = async () => {
+      const native = this.primary?.capture;
+      if (native) return (await native(1280))?.data;
+      const r = await this.frameRequest({ kind: "view", outline: false, screenshot: true, maxWidth: 1280 });
+      return r.image?.mimeType === "image/png" ? r.image.data : undefined;
+    };
+    const b64 = await Promise.race([shot().catch(() => undefined), timeout]);
+    return b64 ? Buffer.from(b64, "base64") : undefined;
   }
 
   // ================================================================ clients
@@ -184,6 +286,7 @@ export class Session {
       chrome: this.d.chrome,
       undo: this.undoInfo(),
       stats: this.stats,
+      file: this.d.artifactPath ? path.basename(this.d.artifactPath) : undefined,
     };
   }
 
@@ -215,6 +318,7 @@ export class Session {
         config: this.d.config,
         systemPrompt: canvasSystemPrompt(this.d.config.cwd),
         resumeId: this.d.providerSessionId,
+        fork: this.d.forkOnResume,
         tools: this.tools,
         emit: (e) => this.onProviderEvent(e),
       });
@@ -252,6 +356,7 @@ export class Session {
     switch (e.type) {
       case "session-id":
         this.d.providerSessionId = e.id;
+        this.d.forkOnResume = undefined;
         this.save();
         return;
       case "text-delta":
@@ -789,6 +894,13 @@ export class SessionStore {
       s = Session.load(file, this.providerFor);
       if (s) this.sessions.set(id, s);
     }
+    return s;
+  }
+
+  import(a: ParsedArtifact, config: SessionConfig, source?: ArtifactSource) {
+    const id = randomUUID();
+    const s = Session.fromArtifact(id, a, config, this.dir, this.providerFor(config), source);
+    this.sessions.set(id, s);
     return s;
   }
 

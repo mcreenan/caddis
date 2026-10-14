@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Effort } from "../../shared/protocol";
-import { send } from "../controller";
+import { fileOpen, send } from "../controller";
 import { useUi } from "../store";
 import { transport } from "../transport";
 
@@ -88,6 +88,9 @@ export function StartCard() {
         <span className={claude?.enabled ? "muted" : "err"} data-testid="auth">
           {!connected ? "Connecting…" : !welcomed ? "Asking Claude Code for models…" : claude?.enabled ? `Claude · ${claude.auth}` : (claude?.note ?? "Claude unavailable")}
         </span>
+        <button type="button" className="btn" title="Open a saved .caddis artifact" disabled={!connected} onClick={fileOpen}>
+          Open…
+        </button>
         <button className="btn primary" type="submit" disabled={!ready || !prompt.trim()}>
           Start
         </button>

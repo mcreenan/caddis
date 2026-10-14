@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import type { AgentStatus, CanvasStats, HistoryItem } from "../../shared/protocol";
+import type { AgentStatus, HistoryItem } from "../../shared/protocol";
 import { miniMarkdown } from "../markdown";
 import { useUi } from "../store";
 
@@ -86,24 +86,4 @@ export function statusText(status: AgentStatus, detail?: string) {
   if (status === "tool") return `running ${detail ?? "a tool"}…`;
   if (status === "error") return detail ? `error: ${detail}` : "error";
   return "ready";
-}
-
-/** fps + watchdog indicator. */
-export function StatsChip({ stats }: { stats?: CanvasStats }) {
-  if (!stats) return null;
-  const warn = stats.warnings.length;
-  const title = [
-    `${stats.fps} fps · ${stats.frameMs} ms/frame (max ${stats.frameMsMax})`,
-    stats.heapMB ? `heap ${stats.heapMB} MB` : "",
-    `timers ${stats.timers} · rAF ${stats.rafs} · listeners ${stats.listeners} · webgl ${stats.webglContexts} · dom ${stats.dom}`,
-    stats.three ? `three: ${stats.three.objects} objects, ${stats.three.geometries} geometries, ${stats.three.textures} textures, ${stats.three.calls} calls` : "",
-    ...stats.warnings.map((w) => `⚠ ${w}`),
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return (
-    <span className={`stats-chip${warn ? " warn" : ""}`} title={title} data-testid="stats-chip">
-      {warn ? `⚠ ${warn}` : `${stats.fps} fps`}
-    </span>
-  );
 }

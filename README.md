@@ -16,22 +16,63 @@ npm install
 npm start
 ```
 
-Ctrl/Cmd+N opens another window, which is a new session.
+Ctrl/Cmd+N opens another window, which is a new session. You can also open a saved artifact directly: `npm run electron -- path/to/file.caddis`.
 
 ## Using it
 
 1. **Start a session.** Type what the window should become, then pick a model, effort level and working directory. Models and effort levels come from your Claude login.
 2. **Watch it build.** Changes are applied in place without reloading, so 3D scenes keep their camera and animation state as Claude edits them.
-3. **Keep talking.** After the first message the prompt shrinks to a single line, and the history panel shows Claude's replies and tool calls. Click `–` to collapse the history to a small dot that pulses while Claude is working.
+3. **Keep talking.** After the first message the prompt shrinks to a single line, and the history panel shows Claude's replies and tool calls. The titlebar's history button collapses it to a small dot that pulses while Claude is working; click the dot or the button again to expand it.
 4. **Interact with the canvas.** Pages Claude builds can store data and send events that Claude sees with your next message. For example, tick off a task on the page, then ask Claude about it.
 5. **Let it restyle the controls.** Claude can move and restyle the prompt and history panel, within limits that keep them visible and usable.
-6. **Undo or escape.** Press Ctrl/Cmd+Shift+Esc, or click the ⎋ button in the bottom-left corner, to open safe mode. It shows plain, unstyled controls with:
+6. **Use the titlebar.** Caddis draws its own titlebar and keeps your system's window buttons. Claude can't restyle or cover it. From left to right, it has:
+   - the menu button (Windows, Linux and the web; on macOS these items are in the system menu bar):
+     - **File**: new window, open, save and save as
+     - **Canvas**: undo, redo, reload or clear the canvas
+     - **View**: show or hide the overlay, expand or minimise the history, reset the overlay's style
    - undo and redo for the canvas and the controls
-   - reset controls
-   - hide, reload or clear the canvas
-   - new window
+   - a button that hides or shows the prompt and history (`Ctrl/Cmd+\`)
+   - a button that switches the history between its normal and minimised size
+   - the session's title
+   - a status readout:
+     - Claude's status
+     - frame rate (3D canvases)
+     - number and total size of the canvas files
+     - size of the data store
+     - memory and, in the desktop app, CPU used by the canvas
+     - watchdog warnings
 
 Sessions are saved automatically. Reopening one restores its canvas, data and controls.
+
+### Save and open `.caddis` files
+
+The **File** menu (the titlebar's menu button, or the macOS menu bar) has:
+
+| Item | Shortcut | What it does |
+|---|---|---|
+| New window | Ctrl/Cmd+N | Opens a window with a new session (a new tab on the web) |
+| Open… | Ctrl/Cmd+O | Opens a `.caddis` file as a new session. A window still on the start card is reused |
+| Save | Ctrl/Cmd+S | Saves to the file this session came from or was last saved to (on the web, downloads it) |
+| Save as… | Ctrl/Cmd+Shift+S | Saves to a new file |
+
+A `.caddis` file is a zip archive you can inspect with any unzip tool:
+
+| Path | Contents |
+|---|---|
+| `manifest.json` | Format version, title, model and working directory, a summary (turns, tool calls, cost), and every file below with its size and SHA-256 |
+| `data.json` | The data store shared by Claude and the page |
+| `history.json` | The conversation as shown in the history panel |
+| `canvas/…` | Every canvas file: `index.html`, stylesheets, modules and assets |
+| `claude/transcript.jsonl` | Claude Code's transcript, so Claude remembers the conversation after you open the file |
+| `workspace/…` | Files Claude created or edited in the working directory with its file tools. Changes made by shell commands aren't tracked |
+| `chrome.json`, `activity.json`, `undo.json` | Control styling, canvas activity, and undo/redo history |
+| `preview.png` | A screenshot of the window when it was saved |
+
+When you open a file:
+- The session keeps its original working directory if that folder exists on this machine. Otherwise it uses the default directory.
+- Workspace files are written back only into the original folder, and only when they're missing. Existing files are never overwritten.
+- Claude continues from a copy of the saved conversation, so the original session is left unchanged.
+- The archive is checked against its manifest, and a file that doesn't match is rejected.
 
 ### What Claude can do
 

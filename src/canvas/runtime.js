@@ -80,14 +80,14 @@ orig.add.call(
 );
 orig.add.call(window, "unhandledrejection", (e) => log("error", ["Unhandled rejection:", e.reason]));
 
-// Escape hatch: forwarded so it works even while the canvas has focus.
+// Host shortcuts, forwarded so they work while the canvas has focus (Electron catches them in main instead).
 orig.add.call(
   window,
   "keydown",
   (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "Escape" || e.code === "Escape")) {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === "Backslash") {
       e.preventDefault();
-      post({ type: "escape" });
+      post({ type: "hotkey", key: "overlay" });
     }
   },
   true,

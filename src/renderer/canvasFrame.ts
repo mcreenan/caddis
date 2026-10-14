@@ -15,7 +15,7 @@ export class CanvasFrameHost {
     private stage: HTMLElement,
     private frameUrl: string,
     private send: (msg: ClientMsg) => void,
-    private onEscape: () => void,
+    private onHotkey: (key: "overlay") => void,
   ) {
     window.addEventListener("message", this.onWindowMessage);
   }
@@ -99,8 +99,8 @@ export class CanvasFrameHost {
       case "stats":
         useUi.setState({ stats: m.stats });
         return this.send({ t: "frame.stats", stats: m.stats });
-      case "escape":
-        return this.onEscape();
+      case "hotkey":
+        return this.onHotkey(m.key);
     }
   }
 }
