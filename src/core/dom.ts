@@ -1,11 +1,11 @@
 import { parseHTML } from "linkedom";
-import type { CanvasPatch } from "../shared/protocol";
+import type { DomPatch } from "../shared/protocol";
 
 /**
  * Apply a CanvasPatch to body markup. The same semantics are implemented in
- * public/frame/bridge.js for live application inside the iframe.
+ * src/canvas/runtime.js for live application inside the iframe.
  */
-export function applyPatch(html: string, patch: CanvasPatch): { html: string; matched: number } {
+export function applyPatch(html: string, patch: DomPatch): { html: string; matched: number } {
   const { document } = parseHTML(`<!doctype html><html><head></head><body>${html}</body></html>`);
   let nodes: Element[];
   try {

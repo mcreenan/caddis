@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!-- Agent Canvas frame shell. Loaded once in a sandbox="allow-scripts" iframe
+         (opaque origin); all content arrives over postMessage and is applied live. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.js",
+          "three/addons/": "./vendor/three/addons/",
+          "d3": "./vendor/d3.js",
+          "idiomorph": "./vendor/idiomorph.js",
+          "canvas": "./canvas.js"
+        }
+      }
+    </script>
+    <style data-ac-internal>
+      :root { color-scheme: dark; color: #e6e6ea; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; height: 100%; }
+      html { background: #0e0f13; }
+      body { margin: 0; min-height: 100%; }
+      /* Surface modes: the drawing surface sits under body; body passes pointer events through
+         to it except where agent markup actually is. */
+      html.ac-surface body { pointer-events: none; }
+      :where(html.ac-surface body *) { pointer-events: auto; }
+      #__ac_surface { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; z-index: 0; }
+      html.ac-surface body { position: relative; z-index: 1; }
+    </style>
+    <script type="module" src="./runtime.js"></script>
+  </head>
+  <body></body>
+</html>

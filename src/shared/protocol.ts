@@ -1,71 +1,67 @@
 /**
- * Agent Canvas protocol, version 1.
+ * Agent Canvas protocol, version 2.
  *
- * Three channels:
- *   1. WebSocket  client <-> server   (ClientMsg / ServerMsg), path `/ws`
- *   2. postMessage parent <-> canvas iframe (ToFrameMsg / FromFrameMsg)
- *   3. Agent tools (CANVAS_TOOLS) exposed to the model via MCP
+ * Three hops:
+ *   1. host transport  UI <-> session core  (ClientMsg / ServerMsg)
+ *        web: WebSocket `/ws` (JSON)   electron: IPC channel `ac:msg` (structured clone)
+ *   2. frame channel   UI <-> canvas iframe (ToFrameMsg / FromFrameMsg), postMessage
+ *   3. agent tools     session core -> model, in-process MCP server "canvas" (src/core/tools.ts)
  *
- * The server is the source of truth for canvas documents and chrome overrides.
+ * The session core is the source of truth for resources, data, chrome and history.
  * See docs/PROTOCOL.md for the prose version.
  */
-import { z } from "zod";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const FRAME_CHANNEL = "agent-canvas";
 
 // ---------------------------------------------------------------------------
-// Canvas document
+// Canvas: a mode plus a set of named resources, all applied live
 // ---------------------------------------------------------------------------
 
 export const CANVAS_MODES = ["html", "canvas", "3d"] as const;
 export type CanvasMode = (typeof CANVAS_MODES)[number];
-export const CANVAS_CONTEXTS = ["2d", "webgl", "webgl2"] as const;
-export type CanvasContextKind = (typeof CANVAS_CONTEXTS)[number];
 
-export interface CanvasDoc {
-  /** Monotonic; bumped on every change (write, patch, mode, undo). */
-  version: number;
-  mode: CanvasMode;
-  /** Body markup. In canvas/3d modes it is an overlay above the drawing surface. */
-  html: string;
-  css: string;
-  /** JS run as an async function body after the mode runtime is ready. */
-  script: string;
-  /** canvas mode only: which context `ctx` is. */
-  context: CanvasContextKind;
+/** `index.html` is the body markup; `*.css` stylesheets; `*.js` ES modules; anything else is an asset. */
+export type ResourceKind = "html" | "css" | "js" | "asset";
+
+export interface Resource {
+  name: string;
+  kind: ResourceKind;
+  /** Text content (html/css/js and text assets). */
+  text?: string;
+  /** Binary assets, base64. */
+  base64?: string;
+  mime: string;
+  /** Canvas rev at which this resource last changed. */
+  rev: number;
+  size: number;
   updatedAt: number;
 }
 
-export const emptyCanvas = (): CanvasDoc => ({
-  version: 0,
-  mode: "html",
-  html: "",
-  css: "",
-  script: "",
-  context: "2d",
-  updatedAt: Date.now(),
-});
+export interface CanvasState {
+  mode: CanvasMode;
+  /** Monotonic; bumped on every canvas change (resource, mode, dom op, undo). */
+  rev: number;
+  resources: Record<string, Resource>;
+}
 
-export const PATCH_OPS = [
-  "replace", // outerHTML
-  "inner", // innerHTML
-  "append", // beforeend
-  "prepend", // afterbegin
-  "before", // beforebegin
-  "after", // afterend
-  "remove",
-  "attr", // content = JSON object of attributes; null value removes
-  "style", // content = CSS declarations appended to style attribute
-  "text", // textContent
-] as const;
-export type PatchOp = (typeof PATCH_OPS)[number];
+export const emptyCanvas = (): CanvasState => ({ mode: "html", rev: 0, resources: {} });
 
-export interface CanvasPatch {
+export function resourceKind(name: string): ResourceKind {
+  if (name === "index.html") return "html";
+  if (name.endsWith(".css")) return "css";
+  if (name.endsWith(".js") || name.endsWith(".mjs")) return "js";
+  return "asset";
+}
+
+export const RESOURCE_NAME_RE = /^(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]{0,99}$/;
+
+export const DOM_OPS = ["replace", "inner", "append", "prepend", "before", "after", "remove", "attr", "style", "text"] as const;
+export type DomOp = (typeof DOM_OPS)[number];
+export interface DomPatch {
   selector: string;
-  op: PatchOp;
+  op: DomOp;
   content?: string;
-  /** Apply to every match instead of the first. */
   all?: boolean;
 }
 
@@ -73,48 +69,118 @@ export interface ConsoleEntry {
   level: "log" | "info" | "warn" | "error";
   message: string;
   ts: number;
-  /** Canvas version that produced it. */
-  version: number;
+  rev: number;
 }
 
 // ---------------------------------------------------------------------------
-// Chrome (the two undeletable overlays)
+// Data store + canvas events
+// ---------------------------------------------------------------------------
+
+export type DataSource = "agent" | "canvas" | "user";
+
+/** One entry in the session's activity log (data writes and emitted events). */
+export interface CanvasEvent {
+  seq: number;
+  ts: number;
+  source: DataSource;
+  type: "emit" | "data.set" | "data.delete";
+  /** emit: event name; data.*: key. */
+  name: string;
+  payload?: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime stats + watchdog
+// ---------------------------------------------------------------------------
+
+export interface CanvasStats {
+  ts: number;
+  mode: CanvasMode;
+  fps: number;
+  frameMs: number;
+  frameMsMax: number;
+  heapMB?: number;
+  dom: number;
+  modules: number;
+  timers: number;
+  rafs: number;
+  listeners: number;
+  webglContexts: number;
+  swaps: number;
+  three?: { geometries: number; textures: number; programs: number; calls: number; triangles: number; objects: number };
+  /** Electron only: the canvas frame's OS process. */
+  process?: { pid: number; memoryMB?: number; cpu?: number; separateFromHost: boolean };
+  warnings: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Chrome: the two floating components the agent may restyle but not remove
 // ---------------------------------------------------------------------------
 
 export const CHROME_COMPONENTS = ["prompt", "history"] as const;
 export type ChromeComponent = (typeof CHROME_COMPONENTS)[number];
+export const ANCHORS = ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"] as const;
+export type Anchor = (typeof ANCHORS)[number];
+export const FONTS = ["system", "serif", "mono", "rounded"] as const;
+export const SHADOWS = ["none", "soft", "strong", "glow"] as const;
 
-/** Props the agent may set. All optional; absent = base default. */
+/** Props the agent may set. All optional; absent = base value. */
 export interface ChromeProps {
-  /** CSS px from viewport left/top. Clamped client-side so >= 80% stays on-screen. */
+  anchor?: Anchor;
+  /** Offset in px from the anchored position. */
   x?: number;
   y?: number;
   width?: number;
   /** history only (prompt height follows its content). */
   height?: number;
-  /** 0.6 .. 1 */
   opacity?: number;
   accent?: string;
   background?: string;
   foreground?: string;
-  /** backdrop blur px, 0 .. 40 */
   blur?: number;
-  /** border radius px, 0 .. 32 */
   radius?: number;
-  /** history only: collapse to the activity button. */
-  mini?: boolean;
+  font?: (typeof FONTS)[number];
+  fontSize?: number;
+  shadow?: (typeof SHADOWS)[number];
+  /** history only. */
+  mode?: "full" | "mini";
 }
 
 export type ChromeState = Record<ChromeComponent, ChromeProps>;
 export const emptyChrome = (): ChromeState => ({ prompt: {}, history: {} });
 
+export interface ChromeApplyResult {
+  component: ChromeComponent;
+  /** Effective props after clamping (base merged with overrides). */
+  applied: Required<Omit<ChromeProps, "height" | "mode">> & { height?: number; mode?: "full" | "mini" };
+  /** Effective on-screen rect for the current viewport. */
+  rect?: { x: number; y: number; width: number; height: number };
+  notes: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Session + history
 // ---------------------------------------------------------------------------
 
-export type ProviderId = "claude" | "codex";
-export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-export type Effort = (typeof EFFORTS)[number];
+export type ProviderId = "claude";
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  efforts: Effort[];
+  description?: string;
+}
+
+export interface ProviderInfo {
+  id: ProviderId;
+  label: string;
+  enabled: boolean;
+  /** e.g. "Claude Max subscription (you@example.com)". */
+  auth?: string;
+  note?: string;
+  models: ModelInfo[];
+}
 
 export interface SessionConfig {
   provider: ProviderId;
@@ -127,20 +193,19 @@ export interface SessionConfig {
 export type AgentStatus = "idle" | "thinking" | "tool" | "error";
 
 export type HistoryItem =
-  | { id: string; ts: number; kind: "user"; text: string }
+  | { id: string; ts: number; kind: "user"; text: string; attached?: string }
   | { id: string; ts: number; kind: "assistant"; text: string }
   | { id: string; ts: number; kind: "thinking"; text: string }
-  | {
-      id: string;
-      ts: number;
-      kind: "tool";
-      name: string;
-      input: unknown;
-      state: "running" | "done" | "error";
-      result?: string;
-    }
-  | { id: string; ts: number; kind: "turn"; ok: boolean; durationMs?: number; costUsd?: number; error?: string }
+  | { id: string; ts: number; kind: "tool"; name: string; input: unknown; state: "running" | "done" | "error"; result?: string }
+  | { id: string; ts: number; kind: "turn"; ok: boolean; error?: string; durationMs?: number; costUsd?: number }
   | { id: string; ts: number; kind: "notice"; level: "info" | "error"; text: string };
+
+export interface UndoInfo {
+  undo: number;
+  redo: number;
+  /** Label of the change the next undo reverts. */
+  next?: string;
+}
 
 export interface SessionSnapshot {
   id: string;
@@ -148,172 +213,94 @@ export interface SessionSnapshot {
   status: AgentStatus;
   statusDetail?: string;
   history: HistoryItem[];
-  canvas: CanvasDoc;
+  canvas: CanvasState;
+  data: Record<string, unknown>;
   chrome: ChromeState;
   undo: UndoInfo;
-}
-
-export interface UndoInfo {
-  canvasUndo: number;
-  canvasRedo: number;
-  chromeUndo: number;
-}
-
-export interface ProviderInfo {
-  id: ProviderId;
-  label: string;
-  enabled: boolean;
-  note?: string;
-  models: { id: string; label: string }[];
-  efforts: Effort[];
+  stats?: CanvasStats;
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket: client -> server
+// Hop 1: UI <-> session core
 // ---------------------------------------------------------------------------
+
+export type FrameRequest =
+  | { kind: "eval"; js: string }
+  | { kind: "view"; outline: boolean; selector?: string; screenshot: boolean; maxWidth: number }
+  | { kind: "stats" }
+  | { kind: "dom"; patch: DomPatch };
+
+export interface FrameResult {
+  ok: boolean;
+  value?: string;
+  error?: string;
+  image?: { data: string; mimeType: string };
+  stats?: CanvasStats;
+}
 
 export type ClientMsg =
   | { t: "hello"; v: number; sessionId?: string }
   | { t: "session.start"; config: SessionConfig; prompt: string }
   | { t: "prompt"; text: string }
   | { t: "interrupt" }
-  /** Reply to a server `canvas.request`. */
-  | { t: "canvas.result"; requestId: string; ok: boolean; value?: string; error?: string; image?: { data: string; mimeType: string } }
-  /** Iframe finished (re)building `version`. */
-  | { t: "canvas.rendered"; version: number }
-  | { t: "canvas.console"; entries: ConsoleEntry[] }
-  | { t: "canvas.undo" }
-  | { t: "canvas.redo" }
+  | { t: "viewport"; width: number; height: number }
+  // canvas frame -> core (relayed by the UI)
+  | { t: "frame.ready"; rev: number }
+  | { t: "frame.applied"; rev: number; errors: string[]; warnings: string[] }
+  | { t: "frame.console"; entries: ConsoleEntry[] }
+  | { t: "frame.result"; requestId: string; result: FrameResult }
+  | { t: "frame.data"; key: string; value?: unknown; deleted?: boolean }
+  | { t: "frame.emit"; name: string; payload?: unknown }
+  | { t: "frame.chrome"; requestId: string; component: ChromeComponent; props?: Record<string, unknown>; reset?: boolean }
+  | { t: "frame.stats"; stats: CanvasStats }
+  // user actions (safe mode etc.)
+  | { t: "chrome.set"; component: ChromeComponent; props: Record<string, unknown> }
+  | { t: "chrome.reset"; component?: ChromeComponent }
+  | { t: "undo" }
+  | { t: "redo" }
   | { t: "canvas.clear" }
-  /** User-originated chrome change (e.g. restoring the mini panel). Unclamped props are normalised server-side. */
-  | { t: "chrome.set"; component: ChromeComponent; props: ChromeProps }
-  | { t: "chrome.undo" }
-  | { t: "chrome.reset" };
-
-// ---------------------------------------------------------------------------
-// WebSocket: server -> client
-// ---------------------------------------------------------------------------
+  | { t: "canvas.reload" };
 
 export type ServerMsg =
-  | { t: "welcome"; v: number; providers: ProviderInfo[]; defaultCwd: string }
+  | { t: "welcome"; v: number; providers: ProviderInfo[]; defaultCwd: string; platform: "web" | "electron" }
   | { t: "session.snapshot"; session: SessionSnapshot }
   | { t: "session.none"; sessionId?: string }
   | { t: "history.append"; item: HistoryItem }
   | { t: "history.update"; id: string; patch: Partial<HistoryItem>; appendText?: string }
   | { t: "status"; status: AgentStatus; detail?: string }
-  | { t: "canvas.state"; canvas: CanvasDoc; undo: UndoInfo }
-  /** Live-apply `patch` if the client is at canvas.version - 1, else rebuild from `canvas`. */
-  | { t: "canvas.patch"; patch: CanvasPatch; canvas: CanvasDoc; undo: UndoInfo }
-  /** Ask the live iframe to do something and reply with `canvas.result`. */
-  | { t: "canvas.request"; requestId: string; kind: "eval"; js: string }
-  | { t: "canvas.request"; requestId: string; kind: "snapshot"; maxWidth: number }
-  | { t: "chrome.state"; chrome: ChromeState; undo: UndoInfo }
+  | { t: "canvas.mode"; mode: CanvasMode; rev: number }
+  | { t: "canvas.resource"; resource: Resource; rev: number }
+  | { t: "canvas.delete"; name: string; rev: number }
+  /** Full state (undo/redo/clear). The frame diffs and applies in place. */
+  | { t: "canvas.state"; canvas: CanvasState }
+  | { t: "canvas.reload"; canvas: CanvasState }
+  | { t: "data.changed"; key: string; value?: unknown; deleted?: boolean; source: DataSource }
+  | { t: "frame.request"; requestId: string; request: FrameRequest }
+  | { t: "frame.chrome.result"; requestId: string; result: ChromeApplyResult | { error: string } }
+  | { t: "chrome.state"; chrome: ChromeState }
+  | { t: "undo.state"; undo: UndoInfo }
+  | { t: "stats"; stats: CanvasStats }
   | { t: "error"; message: string };
 
 // ---------------------------------------------------------------------------
-// postMessage: parent <-> sandboxed canvas iframe. Every message carries
-// { ch: FRAME_CHANNEL, v: PROTOCOL_VERSION }. The parent only accepts
-// messages whose event.source is the iframe's contentWindow.
+// Hop 2: UI <-> canvas iframe (postMessage; every message has {ch, v})
 // ---------------------------------------------------------------------------
 
 export type ToFrameMsg =
-  | { type: "eval"; id: string; js: string }
-  | { type: "snapshot"; id: string; maxWidth: number }
-  | { type: "patch"; patch: CanvasPatch; version: number };
+  | { type: "init"; canvas: CanvasState; data: Record<string, unknown> }
+  | { type: "state"; canvas: CanvasState }
+  | { type: "data"; key: string; value?: unknown; deleted?: boolean }
+  | { type: "request"; id: string; request: FrameRequest }
+  | { type: "chrome.result"; id: string; result: unknown };
 
 export type FromFrameMsg =
-  | { type: "ready"; version: number }
-  | { type: "result"; id: string; ok: boolean; value?: string; error?: string; image?: { data: string; mimeType: string } }
-  | { type: "console"; entries: Omit<ConsoleEntry, "version">[]; version: number }
-  /** The escape-hatch hotkey was pressed while focus was inside the canvas. */
+  | { type: "hello" }
+  | { type: "ready"; rev: number }
+  | { type: "applied"; rev: number; errors: string[]; warnings: string[] }
+  | { type: "console"; entries: { level: ConsoleEntry["level"]; message: string; ts: number }[] }
+  | { type: "result"; id: string; result: FrameResult }
+  | { type: "data"; key: string; value?: unknown; deleted?: boolean }
+  | { type: "emit"; name: string; payload?: unknown }
+  | { type: "chrome"; id: string; component: ChromeComponent; props?: Record<string, unknown>; reset?: boolean }
+  | { type: "stats"; stats: CanvasStats }
   | { type: "escape" };
-
-// ---------------------------------------------------------------------------
-// Agent tools. Names are exposed to Claude as mcp__canvas__<name>.
-// ---------------------------------------------------------------------------
-
-// Wrapped in a pure IIFE so the browser bundle can drop zod entirely.
-export const CANVAS_TOOLS = /* @__PURE__ */ (() => {
-const colour = z.string().max(64).describe("CSS colour: #hex, rgb()/rgba(), hsl()/hsla(), oklch() or a named colour");
-
-const chromePropsShape = {
-  x: z.number().optional().describe("left, CSS px"),
-  y: z.number().optional().describe("top, CSS px"),
-  width: z.number().optional(),
-  height: z.number().optional().describe("history only"),
-  opacity: z.number().optional().describe("0.6..1"),
-  accent: colour.optional(),
-  background: colour.optional(),
-  foreground: colour.optional(),
-  blur: z.number().optional().describe("backdrop blur px 0..40"),
-  radius: z.number().optional().describe("border radius px 0..32"),
-  mini: z.boolean().optional().describe("history only: collapse to a small activity button"),
-};
-
-return {
-  canvas_set_mode: {
-    description:
-      "Switch canvas mode: html (document), canvas (fullscreen 2D/WebGL <canvas>), 3d (three.js scene). Keeps html/css, clears script.",
-    shape: {
-      mode: z.enum(CANVAS_MODES),
-      context: z.enum(CANVAS_CONTEXTS).optional().describe("canvas mode: context type for ctx (default 2d)"),
-    },
-  },
-  canvas_write: {
-    description:
-      "Replace the whole canvas document. Omitted fields become empty. Returns render status and any errors.",
-    shape: {
-      mode: z.enum(CANVAS_MODES).optional().describe("default: keep current mode"),
-      html: z.string().optional().describe("body markup (overlay in canvas/3d modes)"),
-      css: z.string().optional(),
-      script: z.string().optional().describe("JS async function body run after setup; see system prompt for in-scope names"),
-      context: z.enum(CANVAS_CONTEXTS).optional().describe("canvas mode only"),
-    },
-  },
-  canvas_patch: {
-    description:
-      "Targeted edit of the html markup by CSS selector, applied live without reloading. op: replace|inner|append|prepend|before|after|remove|attr (content=JSON object)|style (content=CSS decls)|text.",
-    shape: {
-      selector: z.string(),
-      op: z.enum(PATCH_OPS),
-      content: z.string().optional(),
-      all: z.boolean().optional().describe("apply to all matches (default first)"),
-    },
-  },
-  canvas_eval: {
-    description:
-      "Run JS in the live canvas (same scope helpers as script, as an async function body) and return the JSON-serialised return value. Not persisted.",
-    shape: { js: z.string() },
-  },
-  canvas_get_state: {
-    description: "Return the current canvas source (mode, html, css, script, version) and recent console output/errors.",
-    shape: {},
-  },
-  canvas_snapshot: {
-    description: "Capture a PNG of the canvas as the user currently sees it.",
-    shape: { maxWidth: z.number().optional().describe("default 768") },
-  },
-  chrome_update: {
-    description:
-      "Restyle/move the floating prompt or history overlay. Values are clamped (min size, >=80% on-screen, opacity>=0.6); they cannot be hidden.",
-    shape: { component: z.enum(CHROME_COMPONENTS), props: z.object(chromePropsShape) },
-  },
-  chrome_reset: {
-    description: "Reset chrome overrides to defaults (one component or both).",
-    shape: { component: z.enum(CHROME_COMPONENTS).optional() },
-  },
-} as const;
-})();
-
-export type CanvasToolName = keyof typeof CANVAS_TOOLS;
-export const CANVAS_TOOL_NAMES: CanvasToolName[] = [
-  "canvas_set_mode",
-  "canvas_write",
-  "canvas_patch",
-  "canvas_eval",
-  "canvas_get_state",
-  "canvas_snapshot",
-  "chrome_update",
-  "chrome_reset",
-];
-export const MCP_SERVER_NAME = "canvas";

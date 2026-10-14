@@ -3,3 +3,4 @@ dist/
 data/
 *.log
 .e2e/
+out/

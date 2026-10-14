@@ -1,10 +1,9 @@
 import type { ProviderInfo, SessionConfig } from "../../shared/protocol";
-import type { CanvasToolHost } from "../canvasTools";
+import type { ToolSet } from "../tools";
 
 /** Normalised events a provider emits; the Session turns them into history. */
 export type ProviderEvent =
   | { type: "session-id"; id: string }
-  | { type: "turn-start" }
   | { type: "text-delta"; messageId: string; text: string }
   | { type: "text"; messageId: string; text: string }
   | { type: "thinking"; messageId: string; text: string }
@@ -16,9 +15,10 @@ export type ProviderEvent =
 export interface ProviderContext {
   config: SessionConfig;
   systemPrompt: string;
-  /** Provider-native session id to resume (e.g. Claude session UUID), if any. */
+  /** Provider-native session id to resume, if any. */
   resumeId?: string;
-  tools: CanvasToolHost;
+  /** Canvas tools, provider-agnostic; each provider exposes them its own way. */
+  tools: ToolSet;
   emit: (e: ProviderEvent) => void;
 }
 
@@ -29,6 +29,7 @@ export interface AgentRun {
 }
 
 export interface AgentProvider {
-  info(): ProviderInfo;
+  /** Probe availability, auth and models from the host (cached by the caller). */
+  discover(): Promise<ProviderInfo>;
   start(ctx: ProviderContext): AgentRun;
 }
