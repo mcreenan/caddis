@@ -48,27 +48,28 @@ Sessions are saved automatically. Reopening one restores its canvas, data and co
 
 The **File** menu (the titlebar's menu button, or the macOS menu bar) has:
 
-| Item | Shortcut | What it does |
-|---|---|---|
-| New window | Ctrl/Cmd+N | Opens a window with a new session (a new tab on the web) |
-| Open… | Ctrl/Cmd+O | Opens a `.caddis` file as a new session. A window still on the start card is reused |
-| Save | Ctrl/Cmd+S | Saves to the file this session came from or was last saved to (on the web, downloads it) |
-| Save as… | Ctrl/Cmd+Shift+S | Saves to a new file |
+| Item       | Shortcut         | What it does                                                                             |
+| ---------- | ---------------- | ---------------------------------------------------------------------------------------- |
+| New window | Ctrl/Cmd+N       | Opens a window with a new session (a new tab on the web)                                 |
+| Open…      | Ctrl/Cmd+O       | Opens a `.caddis` file as a new session. A window still on the start card is reused      |
+| Save       | Ctrl/Cmd+S       | Saves to the file this session came from or was last saved to (on the web, downloads it) |
+| Save as…   | Ctrl/Cmd+Shift+S | Saves to a new file                                                                      |
 
 A `.caddis` file is a zip archive you can inspect with any unzip tool:
 
-| Path | Contents |
-|---|---|
-| `manifest.json` | Format version, title, model and working directory, a summary (turns, tool calls, cost), and every file below with its size and SHA-256 |
-| `data.json` | The data store shared by Claude and the page |
-| `history.json` | The conversation as shown in the history panel |
-| `canvas/…` | Every canvas file: `index.html`, stylesheets, modules and assets |
-| `claude/transcript.jsonl` | Claude Code's transcript, so Claude remembers the conversation after you open the file |
-| `workspace/…` | Files Claude created or edited in the working directory with its file tools. Changes made by shell commands aren't tracked |
-| `chrome.json`, `activity.json`, `undo.json` | Control styling, canvas activity, and undo/redo history |
-| `preview.png` | A screenshot of the window when it was saved |
+| Path                                        | Contents                                                                                                                                |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `manifest.json`                             | Format version, title, model and working directory, a summary (turns, tool calls, cost), and every file below with its size and SHA-256 |
+| `data.json`                                 | The data store shared by Claude and the page                                                                                            |
+| `history.json`                              | The conversation as shown in the history panel                                                                                          |
+| `canvas/…`                                  | Every canvas file: `index.html`, stylesheets, modules and assets                                                                        |
+| `claude/transcript.jsonl`                   | Claude Code's transcript, so Claude remembers the conversation after you open the file                                                  |
+| `workspace/…`                               | Files Claude created or edited in the working directory with its file tools. Changes made by shell commands aren't tracked              |
+| `chrome.json`, `activity.json`, `undo.json` | Control styling, canvas activity, and undo/redo history                                                                                 |
+| `preview.png`                               | A screenshot of the window when it was saved                                                                                            |
 
 When you open a file:
+
 - The session keeps its original working directory if that folder exists on this machine. Otherwise it uses `CADDIS_DEFAULT_CWD` or a new temporary directory.
 - Workspace files are written back only into the original folder, and only when they're missing. Existing files are never overwritten.
 - Claude continues from a copy of the saved conversation, so the original session is left unchanged.
@@ -84,20 +85,37 @@ In its working directory, Claude can read and edit files and run shell commands 
 
 ### Settings
 
-| Variable | Purpose |
-|---|---|
-| `CADDIS_DEFAULT_CWD` | Default working directory (a new temporary directory for each session) |
-| `CADDIS_DATA_DIR` | Where sessions are stored |
-| `CADDIS_CLAUDE_EXECUTABLE` | Path to `claude`, if it isn't on `PATH` |
-| `CADDIS_PERMISSION_MODE` | Claude permission mode (default `acceptEdits`) |
-| `CADDIS_SANDBOX` | `0` turns off the command sandbox; commands then need pre-approval |
-| `CADDIS_SESSION` or `--session=<id>` | Reopen a specific session |
-| `HOST`, `PORT` | Web server address (`0.0.0.0`, `5317`) |
+| Variable                             | Purpose                                                                |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `CADDIS_DEFAULT_CWD`                 | Default working directory (a new temporary directory for each session) |
+| `CADDIS_DATA_DIR`                    | Where sessions are stored                                              |
+| `CADDIS_CLAUDE_EXECUTABLE`           | Path to `claude`, if it isn't on `PATH`                                |
+| `CADDIS_PERMISSION_MODE`             | Claude permission mode (default `acceptEdits`)                         |
+| `CADDIS_SANDBOX`                     | `0` turns off the command sandbox; commands then need pre-approval     |
+| `CADDIS_SESSION` or `--session=<id>` | Reopen a specific session                                              |
+| `HOST`, `PORT`                       | Web server address (`0.0.0.0`, `5317`)                                 |
 
 ## Development
 
+The toolchain is [Vite+](https://viteplus.dev) (`vp`): one `vite.config.ts` covers the dev server, builds, formatting, linting, type checking and tests.
+
 ```sh
-npm run dev         # Electron with hot reload
-npm run typecheck
+npm run dev         # Electron with hot reload (vp dev)
+npm run check       # format, lint and type-check (vp check); `npm run fix` applies fixes
+npm test            # unit tests (vp test)
 npm run e2e         # end-to-end test with real Claude turns (TARGET=web for the web build)
+npm run dist        # installer for this OS in dist/ (also dist:linux, dist:mac)
 ```
+
+| Path           | Contents                                                       |
+| -------------- | -------------------------------------------------------------- |
+| `src/main`     | Electron main process                                          |
+| `src/preload`  | Preload bridge (`window.caddis`)                               |
+| `src/renderer` | React UI: chrome, prompt and history                           |
+| `src/canvas`   | Runtime served into the sandboxed canvas frame                 |
+| `src/core`     | Sessions, Claude provider, tools and artifacts, shared by both |
+| `src/server`   | Standalone web server (`npm run web`)                          |
+| `src/shared`   | Types shared across processes                                  |
+| `e2e`          | End-to-end test                                                |
+
+A pre-push hook runs `vp check` and `vp test`. On every push to `main`, GitHub Actions builds Linux (AppImage, deb) and macOS (dmg, zip, unsigned, Apple silicon) installers and attaches them to the run as artifacts.

@@ -40,7 +40,11 @@ function useMenus(): Menu[] {
     {
       label: "Canvas",
       items: [
-        { label: undo.next ? `Undo ${undo.next}` : "Undo change", run: cmd("undo"), disabled: !inSession || !undo.undo },
+        {
+          label: undo.next ? `Undo ${undo.next}` : "Undo change",
+          run: cmd("undo"),
+          disabled: !inSession || !undo.undo,
+        },
         { label: "Redo change", run: cmd("redo"), disabled: !inSession || !undo.redo },
         "-",
         { label: "Reload canvas", run: cmd("reloadCanvas"), disabled: !inSession },
@@ -115,7 +119,13 @@ function AppMenu() {
                     it === "-" ? (
                       <hr key={j} />
                     ) : (
-                      <button key={it.label} role="menuitem" disabled={it.disabled} data-testid={it.testid} onClick={run(it.run)}>
+                      <button
+                        key={it.label}
+                        role="menuitem"
+                        disabled={it.disabled}
+                        data-testid={it.testid}
+                        onClick={run(it.run)}
+                      >
                         {it.label} {it.key && <kbd>{it.key}</kbd>}
                       </button>
                     ),
@@ -133,7 +143,17 @@ function AppMenu() {
 
 function Icon({ d, children }: { d?: string; children?: ReactNode }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 18 18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       {d && <path d={d} />}
       {children}
     </svg>
@@ -146,10 +166,24 @@ function SessionControls() {
   const mini = useUi(historyMini);
   return (
     <div className="tb-group">
-      <button className="tb-btn" title={undo.next ? `Undo: ${undo.next}` : "Nothing to undo"} aria-label="Undo" data-testid="undo" disabled={!undo.undo} onClick={() => uiCommand("undo")}>
+      <button
+        className="tb-btn"
+        title={undo.next ? `Undo: ${undo.next}` : "Nothing to undo"}
+        aria-label="Undo"
+        data-testid="undo"
+        disabled={!undo.undo}
+        onClick={() => uiCommand("undo")}
+      >
         <Icon d="M6.5 4.5 3.5 7.5l3 3M3.5 7.5h7a4 4 0 0 1 0 8H8" />
       </button>
-      <button className="tb-btn" title={undo.redo ? "Redo" : "Nothing to redo"} aria-label="Redo" data-testid="redo" disabled={!undo.redo} onClick={() => uiCommand("redo")}>
+      <button
+        className="tb-btn"
+        title={undo.redo ? "Redo" : "Nothing to redo"}
+        aria-label="Redo"
+        data-testid="redo"
+        disabled={!undo.redo}
+        onClick={() => uiCommand("redo")}
+      >
         <Icon d="M11.5 4.5l3 3-3 3M14.5 7.5h-7a4 4 0 0 0 0 8H10" />
       </button>
       <span className="tb-sep" />
@@ -210,7 +244,9 @@ function Sparkline({ values, floor }: { values: number[]; floor: number }) {
   const h = 14;
   if (values.length < 2) return <svg className="tb-spark" width={w} height={h} aria-hidden />;
   const max = Math.max(floor, ...values);
-  const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 1 - (Math.min(v, max) / max) * (h - 2)] as const);
+  const pts = values.map(
+    (v, i) => [(i / (values.length - 1)) * w, h - 1 - (Math.min(v, max) / max) * (h - 2)] as const,
+  );
   const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   return (
     <svg className="tb-spark" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden>
@@ -230,7 +266,18 @@ const GLYPH = {
 
 function Glyph({ d }: { d: string }) {
   return (
-    <svg className="tb-glyph" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      className="tb-glyph"
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <path d={d} />
     </svg>
   );
@@ -271,12 +318,20 @@ function Status() {
           <small>fps</small>
         </span>
       )}
-      <span className="tb-stat" title={files.length ? files.map((r) => `${r.name}  ${fmtBytes(r.size)}`).join("\n") : "No canvas files yet"} data-testid="files">
+      <span
+        className="tb-stat"
+        title={files.length ? files.map((r) => `${r.name}  ${fmtBytes(r.size)}`).join("\n") : "No canvas files yet"}
+        data-testid="files"
+      >
         <Glyph d={GLYPH.file} />
         {files.length}
         <small>{fmtBytes(total)}</small>
       </span>
-      <span className="tb-stat" title={`Data store: ${dataKeys} ${dataKeys === 1 ? "key" : "keys"}, ${fmtBytes(dataBytes)}`} data-testid="data-size">
+      <span
+        className="tb-stat"
+        title={`Data store: ${dataKeys} ${dataKeys === 1 ? "key" : "keys"}, ${fmtBytes(dataBytes)}`}
+        data-testid="data-size"
+      >
         <Glyph d={GLYPH.data} />
         {fmtBytes(dataBytes)}
       </span>
@@ -292,7 +347,11 @@ function Status() {
         </span>
       )}
       {proc?.cpu !== undefined && (
-        <span className={`tb-stat ${level(proc.cpu, 50, 85)}`} title={`Canvas process CPU: ${proc.cpu}%`} data-testid="cpu">
+        <span
+          className={`tb-stat ${level(proc.cpu, 50, 85)}`}
+          title={`Canvas process CPU: ${proc.cpu}%`}
+          data-testid="cpu"
+        >
           <Sparkline values={cpu} floor={10} />
           {proc.cpu.toFixed(proc.cpu < 10 ? 1 : 0)}
           <small>% cpu</small>
@@ -312,7 +371,12 @@ function Status() {
 function useTitle() {
   const file = useUi((s) => s.file);
   const chosen = useUi((s) => s.title);
-  const first = useUi((s) => s.history.find((h) => h.kind === "user")?.text.split("\n")[0].slice(0, TITLE_MAX));
+  const first = useUi((s) =>
+    s.history
+      .find((h) => h.kind === "user")
+      ?.text.split("\n")[0]
+      .slice(0, TITLE_MAX),
+  );
   const title = chosen?.by === "user" ? chosen.text : (file ?? chosen?.text ?? first);
   useEffect(() => {
     document.title = title ? `${title} — Caddis` : "Caddis";
@@ -362,9 +426,20 @@ function Title() {
         <RenameInput initial={chosen?.text ?? title ?? ""} current={chosen?.text ?? ""} />
       </div>
     );
-  const hint = [file && `Saved as ${file}`, chosen?.by === "agent" && `Named by Claude: ${chosen.text}`, inSession && "Double-click to rename"].filter(Boolean).join("\n");
+  const hint = [
+    file && `Saved as ${file}`,
+    chosen?.by === "agent" && `Named by Claude: ${chosen.text}`,
+    inSession && "Double-click to rename",
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
-    <div className="tb-title" title={hint || undefined} data-testid="title" onDoubleClick={inSession ? () => useUi.setState({ renaming: true }) : undefined}>
+    <div
+      className="tb-title"
+      title={hint || undefined}
+      data-testid="title"
+      onDoubleClick={inSession ? () => useUi.setState({ renaming: true }) : undefined}
+    >
       <span className={inSession ? "tb-title-text" : undefined}>{title ?? "Caddis"}</span>
     </div>
   );
@@ -374,7 +449,11 @@ export function TitleBar() {
   const inSession = useUi((s) => s.phase === "session");
   const os = window.caddis?.os;
   return (
-    <header className={`titlebar${os === "darwin" ? " mac" : os ? " wco" : ""}`} style={{ zIndex: HOST_Z }} data-testid="titlebar">
+    <header
+      className={`titlebar${os === "darwin" ? " mac" : os ? " wco" : ""}`}
+      style={{ zIndex: HOST_Z }}
+      data-testid="titlebar"
+    >
       {!NATIVE_MENU && <AppMenu />}
       {inSession && <SessionControls />}
       <Title />
@@ -390,7 +469,10 @@ export function Toast() {
   const text = error ?? toast;
   useEffect(() => {
     if (!text) return;
-    const t = setTimeout(() => useUi.setState(error ? { error: undefined } : { toast: undefined }), error ? 8000 : 3000);
+    const t = setTimeout(
+      () => useUi.setState(error ? { error: undefined } : { toast: undefined }),
+      error ? 8000 : 3000,
+    );
     return () => clearTimeout(t);
   }, [text, error]);
   if (!text) return null;

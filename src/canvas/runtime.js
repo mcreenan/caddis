@@ -24,11 +24,16 @@ const orig = {
   clearInterval: window.clearInterval.bind(window),
   raf: window.requestAnimationFrame.bind(window),
   caf: window.cancelAnimationFrame.bind(window),
+  // Called with .call() on the right receiver.
+  /* oxlint-disable typescript/unbound-method */
   add: EventTarget.prototype.addEventListener,
   remove: EventTarget.prototype.removeEventListener,
   getContext: HTMLCanvasElement.prototype.getContext,
   o3dAdd: THREE.Object3D.prototype.add,
+  /* oxlint-enable typescript/unbound-method */
 };
+/** Plain code-unit order (what a bare `.sort()` does for strings). */
+const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const sleep = (ms) => new Promise((r) => orig.setTimeout(r, ms));
 
 // ======================================================================== console capture
@@ -74,7 +79,8 @@ orig.add.call(
   (e) => {
     if (e.error) log("error", [e.error]);
     else if (e.message) log("error", [`${e.message} (${e.filename}:${e.lineno})`]);
-    else if (e.target && e.target !== window) log("error", [`failed to load ${e.target.src || e.target.href || e.target.tagName}`]);
+    else if (e.target && e.target !== window)
+      log("error", [`failed to load ${e.target.src || e.target.href || e.target.tagName}`]);
   },
   true,
 );
@@ -188,7 +194,8 @@ const dropListener = (rec) => {
   if (list) list.splice(list.indexOf(rec) >>> 0, 1);
 };
 EventTarget.prototype.addEventListener = function (type, fn, opts) {
-  if (internal || !fn || (typeof fn !== "function" && typeof fn.handleEvent !== "function")) return orig.add.call(this, type, fn, opts);
+  if (internal || !fn || (typeof fn !== "function" && typeof fn.handleEvent !== "function"))
+    return orig.add.call(this, type, fn, opts);
   const capture = captureOf(opts);
   let list = listenerIndex.get(fn);
   if (!list) listenerIndex.set(fn, (list = []));
@@ -198,6 +205,7 @@ EventTarget.prototype.addEventListener = function (type, fn, opts) {
   rec.wrapped = function (ev) {
     if (opts?.once) dropListener(rec);
     if (o?.disposed) return;
+    // oxlint-disable-next-line typescript/unbound-method -- withOwner calls handleEvent with `fn` as `this`.
     return withOwner(o, typeof fn === "function" ? fn : fn.handleEvent, typeof fn === "function" ? this : fn, [ev]);
   };
   list.push(rec);
@@ -259,7 +267,8 @@ function disposeOwner(o) {
   for (const [id, owner] of timeouts) if (owner === o) window.clearTimeout(id);
   for (const [id, owner] of intervals) if (owner === o) window.clearInterval(id);
   for (const [id, owner] of rafs) if (owner === o) window.cancelAnimationFrame(id);
-  for (const rec of [...listeners]) if (rec.owner === o) rec.target.removeEventListener(rec.type, rec.fn, { capture: rec.capture });
+  for (const rec of [...listeners])
+    if (rec.owner === o) rec.target.removeEventListener(rec.type, rec.fn, { capture: rec.capture });
   o.subs.clear();
   o.frameFns.clear();
   o.resizeFns.clear();
@@ -292,7 +301,11 @@ function teardownMode() {
   internal++;
   try {
     rt.controls?.dispose();
-    if (rt.scene) for (const child of [...rt.scene.children]) (rt.scene.remove(child), disposeThree(child));
+    if (rt.scene)
+      for (const child of [...rt.scene.children]) {
+        rt.scene.remove(child);
+        disposeThree(child);
+      }
     rt.renderer?.dispose();
     rt.renderer?.forceContextLoss();
     rt.surface?.remove();
@@ -438,7 +451,7 @@ const metricsOf = (s) => ({
 /** After a module swap: if a count rose on each of the last 3 swaps of the same modules, something is not cleaned up. */
 function sampleAfterSwap() {
   watch.swaps++;
-  const sig = `${rt.mode}|${[...entries.keys()].sort().join(",")}`;
+  const sig = `${rt.mode}|${[...entries.keys()].sort(byCodeUnit).join(",")}`;
   if (sig !== watch.signature) {
     watch.signature = sig;
     watch.samples = [];
@@ -451,7 +464,9 @@ function sampleAfterSwap() {
   for (const k of LEAK_KEYS) {
     const v = s.map((x) => x[k]);
     if (v[0] < v[1] && v[1] < v[2] && v[2] < v[3])
-      watch.leaks.push(`possible leak: ${k} grew ${v.join(" → ")} over the last 3 module swaps (not cleaned up on dispose?)`);
+      watch.leaks.push(
+        `possible leak: ${k} grew ${v.join(" → ")} over the last 3 module swaps (not cleaned up on dispose?)`,
+      );
   }
 }
 
@@ -466,7 +481,8 @@ orig.setInterval(() => {
     if (perf.fps >= 40) watch.fpsGood = true;
     if (watch.fpsGood && perf.fps < 20) watch.lowSecs++;
     else watch.lowSecs = 0;
-    if (watch.lowSecs >= 3) watch.fpsWarning = `fps collapsed to ${perf.fps} (frame ${perf.frameMs} ms avg, ${perf.frameMsMax} ms max) for ${watch.lowSecs}s`;
+    if (watch.lowSecs >= 3)
+      watch.fpsWarning = `fps collapsed to ${perf.fps} (frame ${perf.frameMs} ms avg, ${perf.frameMsMax} ms max) for ${watch.lowSecs}s`;
     else if (perf.fps >= 30) watch.fpsWarning = "";
   }
   post({ type: "stats", stats: collectStats() });
@@ -551,7 +567,7 @@ function applyAssets(resources, prev) {
   for (const [name, r] of Object.entries(resources)) {
     if (r.kind !== "asset" || prev[name]?.rev === r.rev) continue;
     if (assetUrls.has(name)) URL.revokeObjectURL(assetUrls.get(name).url);
-    const bytes = r.base64 !== undefined ? Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0)) : r.text ?? "";
+    const bytes = r.base64 !== undefined ? Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0)) : (r.text ?? "");
     assetUrls.set(name, { rev: r.rev, url: URL.createObjectURL(new Blob([bytes], { type: r.mime })) });
     changed = true;
   }
@@ -573,12 +589,15 @@ function bindAssets() {
   }
 }
 
-const cssWithAssets = (css) => css.replace(/url\(\s*(["']?)asset:([^"')]+)\1\s*\)/g, (m, q, name) => (asset(name) ? `url("${asset(name)}")` : m));
+const cssWithAssets = (css) =>
+  css.replace(/url\(\s*(["']?)asset:([^"')]+)\1\s*\)/g, (m, q, name) => (asset(name) ? `url("${asset(name)}")` : m));
 
 // ======================================================================== css + html
 
 function applyCss(resources, prev, assetsChanged) {
-  const names = Object.keys(resources).filter((n) => resources[n].kind === "css").sort();
+  const names = Object.keys(resources)
+    .filter((n) => resources[n].kind === "css")
+    .sort();
   for (const el of document.head.querySelectorAll("style[data-ac-res]")) if (!resources[el.dataset.acRes]) el.remove();
   let after = document.head.querySelector("style[data-ac-internal]");
   for (const name of names) {
@@ -587,19 +606,21 @@ function applyCss(resources, prev, assetsChanged) {
       el = document.createElement("style");
       el.dataset.acRes = name;
     }
-    if (prev[name]?.rev !== resources[name].rev || assetsChanged || !el.isConnected) el.textContent = cssWithAssets(resources[name].text ?? "");
+    if (prev[name]?.rev !== resources[name].rev || assetsChanged || !el.isConnected)
+      el.textContent = cssWithAssets(resources[name].text ?? "");
     if (after.nextElementSibling !== el) after.after(el); // keep name order
     after = el;
   }
 }
 
 function applyHtml(html) {
-  Idiomorph.morph(document.body, html, {
+  void Idiomorph.morph(document.body, html, {
     morphStyle: "innerHTML",
     ignoreActiveValue: true,
     callbacks: {
       // Module roots and anything marked data-ac-keep belong to JS, not to index.html.
-      beforeNodeRemoved: (node) => !(node.nodeType === 1 && (node.hasAttribute("data-ac-root") || node.hasAttribute("data-ac-keep"))),
+      beforeNodeRemoved: (node) =>
+        !(node.nodeType === 1 && (node.hasAttribute("data-ac-root") || node.hasAttribute("data-ac-keep"))),
     },
   });
 }
@@ -634,14 +655,21 @@ function moduleGraph(resources) {
   const js = Object.values(resources).filter((r) => r.kind === "js");
   const deps = new Map(js.map((r) => [r.name, depsOf(r.name, r.text ?? "")]));
   const imported = new Set([...deps.values()].flatMap((d) => [...d]));
-  const entryNames = js.map((r) => r.name).filter((n) => !imported.has(n)).sort();
+  const entryNames = js
+    .map((r) => r.name)
+    .filter((n) => !imported.has(n))
+    .sort(byCodeUnit);
   const closure = (n, seen = new Set()) => {
     if (seen.has(n)) return seen;
     seen.add(n);
     for (const d of deps.get(n) ?? []) closure(d, seen);
     return seen;
   };
-  const sig = (n) => [...closure(n)].sort().map((m) => `${m}@${resources[m]?.rev ?? "missing"}`).join(",");
+  const sig = (n) =>
+    [...closure(n)]
+      .sort(byCodeUnit)
+      .map((m) => `${m}@${resources[m]?.rev ?? "missing"}`)
+      .join(",");
   return { deps, entryNames, sig };
 }
 
@@ -655,7 +683,10 @@ function moduleUrl(name, resources, deps, stack = []) {
   const key = `${r.rev}|${Object.values(depUrls).join("|")}`;
   const cached = urlCache.get(name);
   if (cached?.key === key) return cached.url;
-  const code = (r.text ?? "").replace(SPEC_RE, (m, pre, q, spec) => `${pre}${q}${depUrls[resolveSpec(name, spec)]}${q}`);
+  const code = (r.text ?? "").replace(
+    SPEC_RE,
+    (m, pre, q, spec) => `${pre}${q}${depUrls[resolveSpec(name, spec)]}${q}`,
+  );
   const url = URL.createObjectURL(new Blob([`${code}\n//# sourceURL=canvas:///${name}`], { type: "text/javascript" }));
   urlCache.set(name, { key, url });
   return url;
@@ -783,8 +814,16 @@ async function applyModules(resources, force, errors) {
       disposeEntry(name);
       swapped = true;
     }
-  for (const name of [...keeps.keys()]) if (!resources[name]) (keeps.delete(name), states.delete(name));
-  for (const name of [...urlCache.keys()]) if (!resources[name]) (URL.revokeObjectURL(urlCache.get(name).url), urlCache.delete(name));
+  for (const name of [...keeps.keys()])
+    if (!resources[name]) {
+      keeps.delete(name);
+      states.delete(name);
+    }
+  for (const name of [...urlCache.keys()])
+    if (!resources[name]) {
+      URL.revokeObjectURL(urlCache.get(name).url);
+      urlCache.delete(name);
+    }
   for (const name of entryNames) {
     const s = sig(name);
     const e = entries.get(name);
@@ -815,7 +854,9 @@ let queue = Promise.resolve();
 
 function enqueue(canvas) {
   latest = canvas;
-  queue = queue.then(() => (latest === canvas ? applyState(canvas) : undefined)).catch((e) => log("error", ["apply failed:", e]));
+  queue = queue
+    .then(() => (latest === canvas ? applyState(canvas) : undefined))
+    .catch((e) => log("error", ["apply failed:", e]));
 }
 
 async function applyState(c) {
@@ -892,14 +933,30 @@ function patchLive(p) {
   const c = p.content ?? "";
   for (const el of nodes) {
     switch (p.op) {
-      case "replace": el.outerHTML = c; break;
-      case "inner": el.innerHTML = c; break;
-      case "append": el.insertAdjacentHTML("beforeend", c); break;
-      case "prepend": el.insertAdjacentHTML("afterbegin", c); break;
-      case "before": el.insertAdjacentHTML("beforebegin", c); break;
-      case "after": el.insertAdjacentHTML("afterend", c); break;
-      case "remove": el.remove(); break;
-      case "text": el.textContent = c; break;
+      case "replace":
+        el.outerHTML = c;
+        break;
+      case "inner":
+        el.innerHTML = c;
+        break;
+      case "append":
+        el.insertAdjacentHTML("beforeend", c);
+        break;
+      case "prepend":
+        el.insertAdjacentHTML("afterbegin", c);
+        break;
+      case "before":
+        el.insertAdjacentHTML("beforebegin", c);
+        break;
+      case "after":
+        el.insertAdjacentHTML("afterend", c);
+        break;
+      case "remove":
+        el.remove();
+        break;
+      case "text":
+        el.textContent = c;
+        break;
       case "style": {
         const prev = el.getAttribute("style") ?? "";
         el.setAttribute("style", prev && !prev.trim().endsWith(";") ? `${prev}; ${c}` : `${prev}${c}`);
@@ -928,9 +985,18 @@ function outline(rootSel, limit = 200) {
     if (el.id) label += `#${el.id}`;
     if (el.classList.length) label += `.${[...el.classList].slice(0, 4).join(".")}`;
     if (el.hasAttribute("data-ac-root")) label += ` [module ${el.getAttribute("data-ac-root")}]`;
-    const hidden = r.width === 0 && r.height === 0 ? " hidden" : ` ${Math.round(r.width)}x${Math.round(r.height)}@${Math.round(r.x)},${Math.round(r.y)}`;
-    const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join(" ").trim();
-    lines.push(`${"  ".repeat(depth)}${label}${hidden}${own ? ` "${own.slice(0, 60)}${own.length > 60 ? "…" : ""}"` : ""}`);
+    const hidden =
+      r.width === 0 && r.height === 0
+        ? " hidden"
+        : ` ${Math.round(r.width)}x${Math.round(r.height)}@${Math.round(r.x)},${Math.round(r.y)}`;
+    const own = [...el.childNodes]
+      .filter((n) => n.nodeType === 3)
+      .map((n) => n.textContent.trim())
+      .join(" ")
+      .trim();
+    lines.push(
+      `${"  ".repeat(depth)}${label}${hidden}${own ? ` "${own.slice(0, 60)}${own.length > 60 ? "…" : ""}"` : ""}`,
+    );
     for (const child of el.children) walk(child, depth + 1);
   };
   walk(root, 0);
@@ -999,7 +1065,10 @@ async function snapshot(maxWidth) {
     }
   }
   const url = out.toDataURL("image/png");
-  return { image: { data: url.slice(url.indexOf(",") + 1), mimeType: "image/png" }, note: `${out.width}x${out.height}${note}` };
+  return {
+    image: { data: url.slice(url.indexOf(",") + 1), mimeType: "image/png" },
+    note: `${out.width}x${out.height}${note}`,
+  };
 }
 
 function modulesSummary() {
@@ -1064,7 +1133,7 @@ orig.add.call(window, "message", async (ev) => {
       Object.keys(store).forEach((k) => delete store[k]);
       Object.assign(store, m.data ?? {});
       enqueue(m.canvas);
-      queue.then(() => post({ type: "ready", rev: shownRev }));
+      void queue.then(() => post({ type: "ready", rev: shownRev }));
       return;
     case "state":
       return enqueue(m.canvas);

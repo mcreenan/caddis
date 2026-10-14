@@ -41,9 +41,23 @@ export const ARTIFACT_EXT = "caddis";
 
 const MAX_WORKSPACE_FILE = 8 * 1024 * 1024;
 const MAX_WORKSPACE_TOTAL = 64 * 1024 * 1024;
-const WRITE_TOOLS: Record<string, string> = { Write: "file_path", Edit: "file_path", MultiEdit: "file_path", NotebookEdit: "notebook_path" };
+const WRITE_TOOLS: Record<string, string> = {
+  Write: "file_path",
+  Edit: "file_path",
+  MultiEdit: "file_path",
+  NotebookEdit: "notebook_path",
+};
 
-export type ArtifactFileRole = "data" | "history" | "canvas" | "chrome" | "activity" | "undo" | "transcript" | "workspace" | "preview";
+export type ArtifactFileRole =
+  | "data"
+  | "history"
+  | "canvas"
+  | "chrome"
+  | "activity"
+  | "undo"
+  | "transcript"
+  | "workspace"
+  | "preview";
 
 export interface ManifestFile {
   path: string;
@@ -66,7 +80,14 @@ export interface Manifest {
   /** `title` is set when the agent or user named the session; the top-level `title` always has a value. */
   session: { id: string; createdAt: number; config: SessionConfig; providerSessionId?: string; title?: SessionTitle };
   canvas: { mode: CanvasMode; rev: number };
-  summary: { turns: number; userMessages: number; toolCalls: number; costUsd: number; dataKeys: number; resources: number };
+  summary: {
+    turns: number;
+    userMessages: number;
+    toolCalls: number;
+    costUsd: number;
+    dataKeys: number;
+    resources: number;
+  };
   files: ManifestFile[];
   /** Things that could not be included (missing or oversized workspace files, no transcript…). */
   notes: string[];
@@ -191,15 +212,22 @@ export function buildArtifact(d: Persisted, preview?: Buffer): { buffer: Buffer;
   add("history.json", jsonBuf(d.history), "history", { mime: "application/json" });
   for (const r of Object.values(d.canvas.resources).sort((a, b) => a.name.localeCompare(b.name))) {
     const data = r.base64 !== undefined ? Buffer.from(r.base64, "base64") : Buffer.from(r.text ?? "");
-    add(`canvas/${r.name}`, data, "canvas", { mime: r.mime, resource: { name: r.name, kind: r.kind, binary: r.base64 !== undefined, rev: r.rev, updatedAt: r.updatedAt } });
+    add(`canvas/${r.name}`, data, "canvas", {
+      mime: r.mime,
+      resource: { name: r.name, kind: r.kind, binary: r.base64 !== undefined, rev: r.rev, updatedAt: r.updatedAt },
+    });
   }
   add("chrome.json", jsonBuf(d.chrome), "chrome", { mime: "application/json" });
-  add("activity.json", jsonBuf({ events: d.events, eventSeq: d.eventSeq, agentCursor: d.agentCursor }), "activity", { mime: "application/json" });
+  add("activity.json", jsonBuf({ events: d.events, eventSeq: d.eventSeq, agentCursor: d.agentCursor }), "activity", {
+    mime: "application/json",
+  });
   add("undo.json", jsonBuf({ undo: d.undo, redo: d.redo }), "undo", { mime: "application/json" });
 
   const transcript = d.providerSessionId ? findTranscript(d.providerSessionId, d.config.cwd) : undefined;
-  if (transcript) add("claude/transcript.jsonl", readFileSync(transcript), "transcript", { mime: "application/x-ndjson" });
-  else if (d.providerSessionId) notes.push("Claude's transcript was not found, so the conversation can be read but not resumed.");
+  if (transcript)
+    add("claude/transcript.jsonl", readFileSync(transcript), "transcript", { mime: "application/x-ndjson" });
+  else if (d.providerSessionId)
+    notes.push("Claude's transcript was not found, so the conversation can be read but not resumed.");
 
   let total = 0;
   for (const rel of writtenFiles(d.history, d.config.cwd)) {
@@ -229,7 +257,13 @@ export function buildArtifact(d: Persisted, preview?: Buffer): { buffer: Buffer;
     app: { name: "caddis", version: pkg.version },
     savedAt: Date.now(),
     title: sessionTitle(d),
-    session: { id: d.id, createdAt: d.createdAt, config: d.config, providerSessionId: d.providerSessionId, title: d.title },
+    session: {
+      id: d.id,
+      createdAt: d.createdAt,
+      config: d.config,
+      providerSessionId: d.providerSessionId,
+      title: d.title,
+    },
     canvas: { mode: d.canvas.mode, rev: d.canvas.rev },
     summary: {
       turns: turns.length,
@@ -257,7 +291,9 @@ export function parseArtifact(buf: Buffer): ParsedArtifact {
   const manifest = JSON.parse(mf.toString("utf8")) as Manifest;
   if (manifest?.format !== ARTIFACT_FORMAT) throw new Error("not a Caddis artifact");
   if (typeof manifest.version !== "number" || manifest.version > ARTIFACT_VERSION)
-    throw new Error(`this artifact needs a newer Caddis (format v${manifest.version}; this build reads v${ARTIFACT_VERSION})`);
+    throw new Error(
+      `this artifact needs a newer Caddis (format v${manifest.version}; this build reads v${ARTIFACT_VERSION})`,
+    );
   if (!Array.isArray(manifest.files)) throw new Error("manifest has no file list");
 
   const listed = new Map<string, ManifestFile>();
@@ -292,7 +328,8 @@ export function parseArtifact(buf: Buffer): ParsedArtifact {
       };
     } else if (f.role === "workspace") {
       const rel = f.path.slice("workspace/".length);
-      if (rel.split("/").some((s) => !s || s === "." || s === "..") || path.isAbsolute(rel)) throw new Error(`unsafe workspace path ${rel}`);
+      if (rel.split("/").some((s) => !s || s === "." || s === "..") || path.isAbsolute(rel))
+        throw new Error(`unsafe workspace path ${rel}`);
       workspace.push({ rel, data });
     }
   }
@@ -343,7 +380,11 @@ function sanitiseUndo(v: unknown): UndoEntry[] {
   if (!Array.isArray(v)) return [];
   return v.filter(
     (e): e is UndoEntry =>
-      !!e && typeof e === "object" && typeof e.label === "string" && (e.mode === undefined || CANVAS_MODES.includes(e.mode)) && Object.keys(e.res ?? {}).every((n) => RESOURCE_NAME_RE.test(n)),
+      !!e &&
+      typeof e === "object" &&
+      typeof e.label === "string" &&
+      (e.mode === undefined || CANVAS_MODES.includes(e.mode)) &&
+      Object.keys(e.res ?? {}).every((n) => RESOURCE_NAME_RE.test(n)),
   );
 }
 

@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { CaddisBridge } from "../preload/index";
+import type { CaddisBridge } from "../shared/bridge";
 
 declare global {
   interface Window {

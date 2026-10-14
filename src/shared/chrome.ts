@@ -1,7 +1,18 @@
-import { ANCHORS, FONTS, SHADOWS, type Anchor, type ChromeApplyResult, type ChromeComponent, type ChromeProps } from "./protocol";
+import {
+  ANCHORS,
+  FONTS,
+  SHADOWS,
+  type Anchor,
+  type ChromeApplyResult,
+  type ChromeComponent,
+  type ChromeProps,
+} from "./protocol";
 
 /** Immutable base values; "Reset overlay style" returns to these. */
-export const CHROME_BASE: Record<ChromeComponent, Required<Omit<ChromeProps, "height" | "mode">> & { height?: number; mode?: "full" | "mini" }> = {
+export const CHROME_BASE: Record<
+  ChromeComponent,
+  Required<Omit<ChromeProps, "height" | "mode">> & { height?: number; mode?: "full" | "mini" }
+> = {
   prompt: {
     anchor: "bottom",
     x: 0,
@@ -76,13 +87,32 @@ export function isSafeColour(v: unknown): v is string {
   return typeof v === "string" && v.length <= 64 && COLOUR_RE.test(v.trim()) && !/url|var|expression|attr/i.test(v);
 }
 
-const KEYS = ["anchor", "x", "y", "width", "height", "opacity", "accent", "background", "foreground", "blur", "radius", "font", "fontSize", "shadow", "mode"];
+const KEYS = [
+  "anchor",
+  "x",
+  "y",
+  "width",
+  "height",
+  "opacity",
+  "accent",
+  "background",
+  "foreground",
+  "blur",
+  "radius",
+  "font",
+  "fontSize",
+  "shadow",
+  "mode",
+];
 
 /**
  * Viewport-independent normalisation: drop unknown keys, clamp ranges, reject
  * unsafe values. `null` for a key resets it to base. Notes describe every change.
  */
-export function normaliseChromeProps(component: ChromeComponent, input: Record<string, unknown>): { props: ChromeProps; reset: (keyof ChromeProps)[]; notes: string[] } {
+export function normaliseChromeProps(
+  component: ChromeComponent,
+  input: Record<string, unknown>,
+): { props: ChromeProps; reset: (keyof ChromeProps)[]; notes: string[] } {
   const props: ChromeProps = {};
   const reset: (keyof ChromeProps)[] = [];
   const notes: string[] = [];
@@ -170,11 +200,25 @@ export interface Rect {
  * Place a component for a viewport: anchor + offset, then clamp so at least
  * 90% of each axis stays on-screen and the size fits the viewport.
  */
-export function layoutChrome(component: ChromeComponent, p: ChromeApplyResult["applied"], vw: number, vh: number, measuredHeight?: number): Rect {
+export function layoutChrome(
+  component: ChromeComponent,
+  p: ChromeApplyResult["applied"],
+  vw: number,
+  vh: number,
+  measuredHeight?: number,
+): Rect {
   const [minW] = CHROME_LIMITS.width[component];
   const width = clamp(p.width, Math.min(minW, vw), Math.max(Math.min(minW, vw), vw - 2 * 8));
-  const rawH = component === "history" ? (p.height ?? CHROME_BASE.history.height!) : (measuredHeight ?? PROMPT_EST_HEIGHT);
-  const height = component === "history" ? clamp(rawH, Math.min(CHROME_LIMITS.height.history[0], vh), Math.max(Math.min(CHROME_LIMITS.height.history[0], vh), vh - 2 * CHROME_MARGIN)) : Math.min(rawH, vh);
+  const rawH =
+    component === "history" ? (p.height ?? CHROME_BASE.history.height!) : (measuredHeight ?? PROMPT_EST_HEIGHT);
+  const height =
+    component === "history"
+      ? clamp(
+          rawH,
+          Math.min(CHROME_LIMITS.height.history[0], vh),
+          Math.max(Math.min(CHROME_LIMITS.height.history[0], vh), vh - 2 * CHROME_MARGIN),
+        )
+      : Math.min(rawH, vh);
   const a: Anchor = p.anchor;
   const hx = a.endsWith("left") || a === "left" ? "l" : a.endsWith("right") || a === "right" ? "r" : "c";
   const vy = a.startsWith("top") ? "t" : a.startsWith("bottom") ? "b" : "c";

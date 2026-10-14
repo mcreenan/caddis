@@ -23,7 +23,10 @@ export class SessionManager {
     readonly defaultCwd = process.env.CADDIS_DEFAULT_CWD ?? "",
     readonly platform: "web" | "electron" = "web",
   ) {
-    this.store = new SessionStore(path.join(dataDir, "sessions"), (c) => this.providers[c.provider] ?? this.providers.claude);
+    this.store = new SessionStore(
+      path.join(dataDir, "sessions"),
+      (c) => this.providers[c.provider] ?? this.providers.claude,
+    );
   }
 
   /** Ask each provider's host for availability, auth and models (cached; retried after a failure). */
@@ -35,7 +38,7 @@ export class SessionManager {
         });
       const discovery = Promise.all(Object.values(this.providers).map((p) => p.discover(updated)));
       this.discovery = discovery;
-      discovery.then((list) => {
+      void discovery.then((list) => {
         if (list.some((p) => !p.enabled)) setTimeout(() => (this.discovery = undefined), 30_000);
       });
     }
@@ -44,9 +47,11 @@ export class SessionManager {
 
   private validateConfig(c: SessionConfig, providers: ProviderInfo[]): SessionConfig {
     const info = providers.find((p) => p.id === c?.provider);
-    if (!info?.enabled) throw new Error(`provider ${c?.provider} is not available${info?.note ? `: ${info.note}` : ""}`);
+    if (!info?.enabled)
+      throw new Error(`provider ${c?.provider} is not available${info?.note ? `: ${info.note}` : ""}`);
     const model = String(c.model ?? "");
-    if (model && info.models.length && !info.models.some((m) => m.id === model)) throw new Error(`unknown model ${model}`);
+    if (model && info.models.length && !info.models.some((m) => m.id === model))
+      throw new Error(`unknown model ${model}`);
     const dir = c.cwd?.trim() || this.defaultCwd;
     const cwd = dir ? path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir())) : this.tempCwd();
     if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new Error(`working directory does not exist: ${cwd}`);
@@ -64,11 +69,19 @@ export class SessionManager {
   async importArtifact(buf: Buffer, source?: ArtifactSource): Promise<Session> {
     const a = parseArtifact(buf);
     const orig = a.manifest.session?.config;
-    const cwd = typeof orig?.cwd === "string" && existsSync(orig.cwd) && statSync(orig.cwd).isDirectory() ? orig.cwd : this.defaultCwd || this.tempCwd();
+    const cwd =
+      typeof orig?.cwd === "string" && existsSync(orig.cwd) && statSync(orig.cwd).isDirectory()
+        ? orig.cwd
+        : this.defaultCwd || this.tempCwd();
     const providers = await this.discover();
     const info = providers.find((p) => p.id === orig?.provider);
     const model = info?.models.some((m) => m.id === orig?.model) ? String(orig?.model) : "";
-    const config: SessionConfig = { provider: "claude", model, effort: model ? ((orig?.effort ?? "") as SessionConfig["effort"]) : "", cwd };
+    const config: SessionConfig = {
+      provider: "claude",
+      model,
+      effort: model ? ((orig?.effort ?? "") as SessionConfig["effort"]) : "",
+      cwd,
+    };
     return this.store.import(a, config, source);
   }
 
@@ -78,8 +91,14 @@ export class SessionManager {
     const fail = (message: string) => client.send({ t: "error", message });
     this.clients.add(client);
 
-    this.discover().then((providers) =>
-      client.send({ t: "welcome", v: PROTOCOL_VERSION, providers, defaultCwd: this.defaultCwd, platform: this.platform }),
+    void this.discover().then((providers) =>
+      client.send({
+        t: "welcome",
+        v: PROTOCOL_VERSION,
+        providers,
+        defaultCwd: this.defaultCwd,
+        platform: this.platform,
+      }),
     );
 
     const handle = async (msg: ClientMsg) => {
@@ -168,8 +187,7 @@ export class SessionManager {
     };
 
     return {
-      receive: (msg: ClientMsg) =>
-        handle(msg).catch((e: any) => fail(e?.message ?? String(e))),
+      receive: (msg: ClientMsg) => handle(msg).catch((e: any) => fail(e?.message ?? String(e))),
       close: () => {
         this.clients.delete(client);
         session?.detach(client);

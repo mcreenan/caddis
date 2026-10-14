@@ -1,4 +1,13 @@
-import { BrowserWindow, Menu, app, dialog, ipcMain, protocol, session as electronSession, type WebContents } from "electron";
+import {
+  BrowserWindow,
+  Menu,
+  app,
+  dialog,
+  ipcMain,
+  protocol,
+  session as electronSession,
+  type WebContents,
+} from "electron";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +15,7 @@ import { ARTIFACT_EXT } from "../core/artifact";
 import { SessionManager } from "../core/manager";
 import type { Client } from "../core/session";
 import { FRAME_HEADERS, createFrameFiles } from "../core/static";
+import type { FileCommand } from "../shared/bridge";
 import type { CanvasStats, ClientMsg, ServerMsg, UiCommand } from "../shared/protocol";
 
 /**
@@ -20,7 +30,10 @@ const ROOT = app.getAppPath();
 const DATA = path.resolve(process.env.CADDIS_DATA_DIR ?? path.join(app.getPath("userData"), "data"));
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: "canvas", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, codeCache: true } },
+  {
+    scheme: "canvas",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, codeCache: true },
+  },
 ]);
 
 const manager = new SessionManager(DATA, undefined, "electron");
@@ -29,7 +42,7 @@ const conns = new Map<number, ReturnType<SessionManager["connect"]>>();
 
 function rendererUrl(sessionId?: string) {
   const q = sessionId ? `?s=${encodeURIComponent(sessionId)}` : "";
-  if (process.env.ELECTRON_RENDERER_URL) return `${process.env.ELECTRON_RENDERER_URL}${q}`;
+  if (process.env.VITE_DEV_SERVER_URL) return `${process.env.VITE_DEV_SERVER_URL}${q}`;
   return `file://${path.join(HERE, "../renderer/index.html")}${q}`;
 }
 
@@ -138,14 +151,15 @@ ipcMain.on("ac:file", (e, cmd: FileCommand) => {
 });
 ipcMain.handle("ac:pickDir", async (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
-  const r = await (win ? dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory"] }) : dialog.showOpenDialog({ properties: ["openDirectory"] }));
+  const r = await (win
+    ? dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory"] })
+    : dialog.showOpenDialog({ properties: ["openDirectory"] }));
   return r.canceled ? undefined : r.filePaths[0];
 });
 
 // ---------------------------------------------------------------- File: new / open / save (.caddis artifacts)
 
-const FILE_COMMANDS = ["new", "open", "save", "saveAs"] as const;
-type FileCommand = (typeof FILE_COMMANDS)[number];
+const FILE_COMMANDS: readonly FileCommand[] = ["new", "open", "save", "saveAs"];
 /** Handled in before-input-event so they work while the canvas (another process) has focus. */
 const SHORTCUTS: Record<string, FileCommand> = { n: "new", o: "open", s: "save", "shift+s": "saveAs" };
 const FILTERS = [{ name: "Caddis artifact", extensions: [ARTIFACT_EXT] }];
@@ -160,7 +174,12 @@ function fileCommand(cmd: FileCommand, win?: BrowserWindow | null) {
 
 async function saveArtifact(win: BrowserWindow, saveAs: boolean) {
   const s = conns.get(win.webContents.id)?.session;
-  if (!s) return void dialog.showMessageBox(win, { type: "info", message: "Nothing to save yet", detail: "Start a session in this window first." });
+  if (!s)
+    return void dialog.showMessageBox(win, {
+      type: "info",
+      message: "Nothing to save yet",
+      detail: "Start a session in this window first.",
+    });
   let file = saveAs ? undefined : s.artifactPath;
   if (!file) {
     const r = await dialog.showSaveDialog(win, {
@@ -178,15 +197,23 @@ async function saveArtifact(win: BrowserWindow, saveAs: boolean) {
     lastDir = path.dirname(file);
     s.setArtifactPath(file);
   } catch (e: any) {
-    dialog.showErrorBox("Couldn't save", `${file}
+    dialog.showErrorBox(
+      "Couldn't save",
+      `${file}
 
-${e?.message ?? e}`);
+${e?.message ?? e}`,
+    );
   }
 }
 
 async function openArtifact(win?: BrowserWindow | null, file?: string) {
   if (!file) {
-    const opts = { title: "Open Caddis artifact", defaultPath: lastDir, filters: FILTERS, properties: ["openFile" as const] };
+    const opts = {
+      title: "Open Caddis artifact",
+      defaultPath: lastDir,
+      filters: FILTERS,
+      properties: ["openFile" as const],
+    };
     const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts));
     if (r.canceled || !r.filePaths[0]) return;
     file = r.filePaths[0];
@@ -199,9 +226,12 @@ async function openArtifact(win?: BrowserWindow | null, file?: string) {
       win.webContents.send("ac:msg", { t: "artifact.opened", sessionId: s.id } satisfies ServerMsg);
     else createWindow(s.id);
   } catch (e: any) {
-    dialog.showErrorBox("Couldn't open artifact", `${file}
+    dialog.showErrorBox(
+      "Couldn't open artifact",
+      `${file}
 
-${e?.message ?? e}`);
+${e?.message ?? e}`,
+    );
   }
 }
 
@@ -271,15 +301,22 @@ app.on("open-file", (e, file) => {
   else pendingOpen = file;
 });
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
   protocol.handle("canvas", (req) => {
     const url = new URL(req.url);
-    const f = url.host === "app" && url.pathname.startsWith("/frame/") ? serveFrame(url.pathname.slice("/frame/".length)) : undefined;
+    const f =
+      url.host === "app" && url.pathname.startsWith("/frame/")
+        ? serveFrame(url.pathname.slice("/frame/".length))
+        : undefined;
     if (!f) return new Response("not found", { status: 404, headers: FRAME_HEADERS });
-    return new Response(new Uint8Array(typeof f.body === "string" ? Buffer.from(f.body) : f.body), { headers: { ...FRAME_HEADERS, "content-type": f.mime } });
+    return new Response(new Uint8Array(typeof f.body === "string" ? Buffer.from(f.body) : f.body), {
+      headers: { ...FRAME_HEADERS, "content-type": f.mime },
+    });
   });
   // Canvases may use the network, but not device permissions.
-  electronSession.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "clipboard-sanitized-write" || permission === "fullscreen"));
+  electronSession.defaultSession.setPermissionRequestHandler((_wc, permission, cb) =>
+    cb(permission === "clipboard-sanitized-write" || permission === "fullscreen"),
+  );
   buildMenu();
   void manager.discover();
   const arg = process.argv.find((a) => a.startsWith("--session="));

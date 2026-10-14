@@ -7,10 +7,10 @@ import type { DomPatch } from "../shared/protocol";
  */
 export function applyPatch(html: string, patch: DomPatch): { html: string; matched: number } {
   const { document } = parseHTML(`<!doctype html><html><head></head><body>${html}</body></html>`);
-  let nodes: Element[];
+  let nodes;
   try {
-    nodes = Array.from(document.body.querySelectorAll(patch.selector)) as Element[];
-  } catch (e) {
+    nodes = Array.from(document.body.querySelectorAll(patch.selector));
+  } catch {
     throw new Error(`invalid selector: ${patch.selector}`);
   }
   if (!patch.all) nodes = nodes.slice(0, 1);
@@ -47,7 +47,7 @@ export function applyPatch(html: string, patch: DomPatch): { html: string; match
         break;
       }
       case "attr": {
-        let attrs: Record<string, unknown>;
+        let attrs: Record<string, string | number | boolean | null>;
         try {
           attrs = JSON.parse(content || "{}");
         } catch {

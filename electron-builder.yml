@@ -1,0 +1,35 @@
+# Installers: `npm run dist` (current OS), `npm run dist:linux`, `npm run dist:mac`. Output goes to dist/.
+appId: dev.mcreenan.caddis
+productName: Caddis
+copyright: Copyright © 2026 Matt Creenan
+directories:
+  output: dist
+  buildResources: build
+files:
+  - package.json
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  # Served raw to the canvas frame at runtime (with d3/three/idiomorph from node_modules).
+  - src/canvas/**
+  # Caddis drives the user's installed `claude` CLI, so skip the SDK's ~250 MB bundled binary.
+  - "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**"
+fileAssociations:
+  - ext: caddis
+    name: Caddis artifact
+    description: Caddis artifact
+    mimeType: application/x-caddis
+    role: Editor
+linux:
+  target: [AppImage, deb]
+  category: Development
+  maintainer: Matt Creenan <mattcreenan@gmail.com>
+  synopsis: A malleable canvas built live by a coding agent
+mac:
+  target: [dmg, zip]
+  category: public.app-category.developer-tools
+  # Unsigned until a Developer ID certificate is set up.
+  identity: null
+dmg:
+  writeUpdateInfo: false
+publish: null

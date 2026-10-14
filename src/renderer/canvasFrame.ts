@@ -1,4 +1,11 @@
-import { FRAME_CHANNEL, PROTOCOL_VERSION, type ClientMsg, type FromFrameMsg, type ServerMsg, type ToFrameMsg } from "../shared/protocol";
+import {
+  FRAME_CHANNEL,
+  PROTOCOL_VERSION,
+  type ClientMsg,
+  type FromFrameMsg,
+  type ServerMsg,
+  type ToFrameMsg,
+} from "../shared/protocol";
 import { useUi } from "./store";
 
 /**
@@ -59,7 +66,12 @@ export class CanvasFrameHost {
       case "data.changed":
         return this.post({ type: "data", key: msg.key, value: msg.value, deleted: msg.deleted });
       case "frame.request":
-        if (!this.alive) return this.send({ t: "frame.result", requestId: msg.requestId, result: { ok: false, error: "canvas is still loading" } });
+        if (!this.alive)
+          return this.send({
+            t: "frame.result",
+            requestId: msg.requestId,
+            result: { ok: false, error: "canvas is still loading" },
+          });
         return this.post({ type: "request", id: msg.requestId, request: msg.request });
       case "frame.chrome.result":
         return this.post({ type: "chrome.result", id: msg.requestId, result: msg.result });
@@ -95,7 +107,13 @@ export class CanvasFrameHost {
       case "emit":
         return this.send({ t: "frame.emit", name: String(m.name), payload: m.payload });
       case "chrome":
-        return this.send({ t: "frame.chrome", requestId: m.id, component: m.component, props: m.props, reset: m.reset });
+        return this.send({
+          t: "frame.chrome",
+          requestId: m.id,
+          component: m.component,
+          props: m.props,
+          reset: m.reset,
+        });
       case "stats":
         useUi.setState({ stats: m.stats });
         return this.send({ t: "frame.stats", stats: m.stats });

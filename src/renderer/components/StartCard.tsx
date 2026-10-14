@@ -5,19 +5,41 @@ import { useUi } from "../store";
 import { transport } from "../transport";
 import { ProviderIcon } from "./ProviderIcon";
 
-const IDEAS = ["A 3D solar system", "A kanban board for this repo", "A step-sequencer synth", "A pixel-art drawing pad"];
-const EFFORT_LABEL: Record<Effort, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+const IDEAS = [
+  "A 3D solar system",
+  "A kanban board for this repo",
+  "A step-sequencer synth",
+  "A pixel-art drawing pad",
+];
+const EFFORT_LABEL: Record<Effort, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
 
 function Glyph({ d, size = 16 }: { d: string; size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <path d={d} />
     </svg>
   );
 }
 
 const CHEVRON = "m4.5 6.5 3.5 3.5 3.5-3.5";
-const FOLDER = "M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z";
+const FOLDER =
+  "M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z";
 
 function Pill({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -38,10 +60,20 @@ function CwdPicker({ cwd, setCwd }: { cwd: string; setCwd: (v: string) => void }
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
-  const name = cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || cwd;
+  const name =
+    cwd
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() || cwd;
   return (
     <div ref={ref} className="cwd">
-      <button type="button" className={`pill${open ? " on" : ""}`} title={cwd || "A new temporary directory"} data-testid="cwd" onClick={() => setOpen(!open)}>
+      <button
+        type="button"
+        className={`pill${open ? " on" : ""}`}
+        title={cwd || "A new temporary directory"}
+        data-testid="cwd"
+        onClick={() => setOpen(!open)}
+      >
         <Glyph d={FOLDER} size={13} />
         <span className="cwd-name">{cwd ? name : "Temporary directory"}</span>
         <Glyph d={CHEVRON} size={12} />
@@ -119,9 +151,19 @@ export function StartCard() {
     if (!prompt.trim() || !ready) return;
     setBusy(true);
     useUi.setState({ error: undefined });
-    send({ t: "session.start", config: { provider: "claude", model: modelId, effort: effort ?? "", cwd }, prompt: prompt.trim() });
+    send({
+      t: "session.start",
+      config: { provider: "claude", model: modelId, effort: effort ?? "", cwd },
+      prompt: prompt.trim(),
+    });
   };
-  const status = !connected ? "Connecting…" : !welcomed ? "Asking Claude Code for models…" : claude?.enabled ? (claude.auth?.replace(/^Claude /, "") ?? "Signed in") : (claude?.note ?? "Claude unavailable");
+  const status = !connected
+    ? "Connecting…"
+    : !welcomed
+      ? "Asking Claude Code for models…"
+      : claude?.enabled
+        ? (claude.auth?.replace(/^Claude /, "") ?? "Signed in")
+        : (claude?.note ?? "Claude unavailable");
 
   return (
     <form
@@ -185,7 +227,13 @@ export function StartCard() {
           <span className="composer-sep" />
           <CwdPicker cwd={cwd} setCwd={setCwd} />
           <span className="composer-gap" />
-          <button className="send" type="submit" title="Start (Enter)" aria-label="Start" disabled={!ready || !prompt.trim()}>
+          <button
+            className="send"
+            type="submit"
+            title="Start (Enter)"
+            aria-label="Start"
+            disabled={!ready || !prompt.trim()}
+          >
             {busy ? <span className="spinner" /> : <Glyph d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />}
           </button>
         </div>
@@ -199,7 +247,13 @@ export function StartCard() {
             {status}
           </span>
         </span>
-        <button type="button" className="link" title="Open a saved .caddis artifact" disabled={!connected} onClick={fileOpen}>
+        <button
+          type="button"
+          className="link"
+          title="Open a saved .caddis artifact"
+          disabled={!connected}
+          onClick={fileOpen}
+        >
           <Glyph d="M4 2h5l3 3v9H4ZM9 2v3h3" size={13} />
           Open .caddis file…
         </button>

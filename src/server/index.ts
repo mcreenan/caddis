@@ -51,7 +51,10 @@ const server = http.createServer((req, res) => {
       return res.end("UI not built: run `npm run build`");
     }
   }
-  res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "application/octet-stream", "cache-control": "no-cache" });
+  res.writeHead(200, {
+    "content-type": MIME[path.extname(file)] ?? "application/octet-stream",
+    "cache-control": "no-cache",
+  });
   createReadStream(file).pipe(res);
 });
 
@@ -80,11 +83,11 @@ wss.on("connection", (ws: WebSocket) => {
   ws.on("message", (raw) => {
     let msg: ClientMsg;
     try {
-      msg = JSON.parse(String(raw));
+      msg = JSON.parse((raw as Buffer).toString()); // binaryType is the default "nodebuffer"
     } catch {
       return client.send({ t: "error", message: "bad json" });
     }
-    conn.receive(msg);
+    void conn.receive(msg);
   });
   ws.on("close", () => conn.close());
 });

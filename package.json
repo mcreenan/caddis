@@ -1,32 +1,42 @@
 {
   "name": "caddis",
   "version": "0.2.0",
+  "private": true,
   "description": "A malleable canvas built live by a coding agent",
-  "scripts": {
-    "dev": "node scripts/with-display.mjs electron-vite dev",
-    "build": "electron-vite build",
-    "start": "electron-vite build && npm run electron",
-    "electron": "node scripts/with-display.mjs electron .",
-    "web": "electron-vite build && npm run serve",
-    "serve": "HOST=${HOST:-0.0.0.0} PORT=${PORT:-5317} tsx src/server/index.ts",
-    "typecheck": "tsc --noEmit",
-    "e2e": "tsx scripts/e2e.ts"
-  },
-  "keywords": [],
-  "author": "",
+  "homepage": "https://github.com/mcreenan/caddis",
   "license": "ISC",
+  "author": "Matt Creenan <mattcreenan@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mcreenan/caddis.git"
+  },
   "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "start": "vp build && node scripts/electron.mjs",
+    "electron": "node scripts/electron.mjs",
+    "web": "vp build && vp pack && node out/server/index.mjs",
+    "serve": "node out/server/index.mjs",
+    "check": "vp check",
+    "fix": "vp check --fix",
+    "test": "vp test run",
+    "e2e": "vp build && npm run e2e:only",
+    "e2e:only": "CADDIS_E2E=1 vp test run --project e2e",
+    "dist": "vp build && electron-builder --publish never",
+    "dist:linux": "vp build && electron-builder --linux --publish never",
+    "dist:mac": "vp build && electron-builder --mac --publish never",
+    "prepare": "vp config"
+  },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.296",
     "d3": "^7.9.0",
     "idiomorph": "^0.8.0",
     "linkedom": "^0.18.13",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
     "three": "^0.186.1",
     "ws": "^8.22.0",
-    "zod": "^4.6.7",
-    "zustand": "^5.0.15"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
@@ -36,12 +46,17 @@
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^44.7.1",
-    "electron-vite": "^6.0.0-beta.8",
+    "electron-builder": "^26.15.3",
     "playwright-core": "^1.64.0",
-    "prettier": "^3.9.10",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.4"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.2.0",
+    "vite-plugin-electron": "^1.1.2",
+    "vite-plus": "1.2.0",
+    "zustand": "^5.0.15"
   },
-  "main": "out/main/index.js"
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.2.0"
+  },
+  "productName": "Caddis"
 }

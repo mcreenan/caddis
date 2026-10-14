@@ -19,7 +19,8 @@ export const TITLEBAR_H = 36;
 export const historyMini = (s = useUi.getState()) => effectiveProps("history", s.chrome.history).mode === "mini";
 
 /** A user change like any other chrome edit: clamped, persisted and undoable. */
-export const setHistoryMode = (mode: "full" | "mini") => send({ t: "chrome.set", component: "history", props: { mode } });
+export const setHistoryMode = (mode: "full" | "mini") =>
+  send({ t: "chrome.set", component: "history", props: { mode } });
 
 export function uiCommand(cmd: UiCommand) {
   if (cmd === "overlay") return toggleOverlay();
@@ -58,7 +59,7 @@ export function fileOpen() {
     const reader = new FileReader();
     reader.onload = () => {
       useUi.setState({ toast: `Opening ${f.name}…` });
-      send({ t: "artifact.import", data: String(reader.result).replace(/^data:[^,]*,/, ""), name: f.name });
+      send({ t: "artifact.import", data: (reader.result as string).replace(/^data:[^,]*,/, ""), name: f.name });
     };
     reader.readAsDataURL(f);
   };

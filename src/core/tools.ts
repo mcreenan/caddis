@@ -65,46 +65,78 @@ const DEFS: ToolDef[] = [
   },
   {
     name: "resource_edit",
-    description: "Exact string replacement in a text resource (old_string must be unique unless replace_all). Applied live; returns errors it caused.",
+    description:
+      "Exact string replacement in a text resource (old_string must be unique unless replace_all). Applied live; returns errors it caused.",
     shape: { name: z.string(), old_string: z.string(), new_string: z.string(), replace_all: z.boolean().optional() },
   },
   { name: "resource_delete", description: "Delete a resource (js modules are disposed).", shape: { name: z.string() } },
   {
     name: "canvas_set_mode",
-    description: "Switch surface: html (DOM only), canvas (full-window 2D canvas, ctx.g), 3d (three.js renderer/scene/camera/controls). Resources are kept and re-run.",
+    description:
+      "Switch surface: html (DOM only), canvas (full-window 2D canvas, ctx.g), 3d (three.js renderer/scene/camera/controls). Resources are kept and re-run.",
     shape: { mode: z.enum(CANVAS_MODES) },
   },
   {
     name: "canvas_dom",
     description:
       "Targeted DOM op on the live page. persist (default true) also applies it to index.html; persist:false touches only the live DOM (e.g. elements your JS created). attr content is a JSON object; style content is CSS declarations.",
-    shape: { selector: z.string(), op: z.enum(DOM_OPS), content: z.string().optional(), all: z.boolean().optional(), persist: z.boolean().optional() },
+    shape: {
+      selector: z.string(),
+      op: z.enum(DOM_OPS),
+      content: z.string().optional(),
+      all: z.boolean().optional(),
+      persist: z.boolean().optional(),
+    },
   },
   {
     name: "canvas_eval",
-    description: "Run JS (async function body) in the live page with the module ctx in scope (canvas, THREE, scene, camera, renderer, g, data, modules). Returns the value. Not saved.",
+    description:
+      "Run JS (async function body) in the live page with the module ctx in scope (canvas, THREE, scene, camera, renderer, g, data, modules). Returns the value. Not saved.",
     shape: { js: z.string() },
   },
   {
     name: "canvas_view",
-    description: "What the user sees: errors and console since your last view, a compact DOM outline, runtime stats, and optionally a screenshot.",
-    shape: { screenshot: z.boolean().optional(), outline: z.boolean().optional(), selector: z.string().optional(), maxWidth: z.number().optional() },
+    description:
+      "What the user sees: errors and console since your last view, a compact DOM outline, runtime stats, and optionally a screenshot.",
+    shape: {
+      screenshot: z.boolean().optional(),
+      outline: z.boolean().optional(),
+      selector: z.string().optional(),
+      maxWidth: z.number().optional(),
+    },
   },
   {
     name: "canvas_set_title",
     description: `Name the canvas: a short title (max ${TITLE_MAX} chars) for the titlebar, window and saved file. Set it once you know what you're building; change it only if the canvas becomes something else. A title the user chose is kept.`,
     shape: { title: z.string() },
   },
-  { name: "canvas_stats", description: "Runtime stats: fps, frame time, heap, three.js renderer.info, WebGL contexts, live timers/listeners/rAF, leak warnings.", shape: {} },
-  { name: "canvas_reload", description: "Fallback only: rebuild the page from resources (loses runtime state).", shape: {} },
-  { name: "data_get", description: "Get a value from the session data store shared with the page.", shape: { key: z.string() } },
+  {
+    name: "canvas_stats",
+    description:
+      "Runtime stats: fps, frame time, heap, three.js renderer.info, WebGL contexts, live timers/listeners/rAF, leak warnings.",
+    shape: {},
+  },
+  {
+    name: "canvas_reload",
+    description: "Fallback only: rebuild the page from resources (loses runtime state).",
+    shape: {},
+  },
+  {
+    name: "data_get",
+    description: "Get a value from the session data store shared with the page.",
+    shape: { key: z.string() },
+  },
   {
     name: "data_set",
     description: "Set a JSON value in the data store; the page re-renders via ctx.data.subscribe(key, cb).",
     shape: { key: z.string(), value: z.any() },
   },
   { name: "data_delete", description: "Delete a key from the data store.", shape: { key: z.string() } },
-  { name: "data_list", description: "List data keys (optionally by prefix) with value previews.", shape: { prefix: z.string().optional() } },
+  {
+    name: "data_list",
+    description: "List data keys (optionally by prefix) with value previews.",
+    shape: { prefix: z.string().optional() },
+  },
   {
     name: "data_append",
     description: "Append an item to an array value (created if missing), keeping at most `max` items.",
@@ -112,12 +144,14 @@ const DEFS: ToolDef[] = [
   },
   {
     name: "events_read",
-    description: "Read canvas activity (ctx.emit events and page data writes) since you last read it. wait_ms > 0 blocks until something arrives (max 60000).",
+    description:
+      "Read canvas activity (ctx.emit events and page data writes) since you last read it. wait_ms > 0 blocks until something arrives (max 60000).",
     shape: { wait_ms: z.number().int().min(0).max(60000).optional() },
   },
   {
     name: "chrome_get",
-    description: "Current props, base values, clamp limits and on-screen rects of the floating prompt and history panel.",
+    description:
+      "Current props, base values, clamp limits and on-screen rects of the floating prompt and history panel.",
     shape: {},
   },
   {
@@ -126,7 +160,11 @@ const DEFS: ToolDef[] = [
       "Restyle/move the floating prompt or history panel: anchor (top-left|top|top-right|left|center|right|bottom-left|bottom|bottom-right) + x/y offset, width, height, opacity, accent/background/foreground colours, blur, radius, font, fontSize, shadow, history mode full|mini. Values are clamped; the applied values are returned.",
     shape: { component: z.enum(CHROME_COMPONENTS), props: chromeProps },
   },
-  { name: "chrome_reset", description: "Reset one or both chrome components to base.", shape: { component: z.enum(CHROME_COMPONENTS).optional() } },
+  {
+    name: "chrome_reset",
+    description: "Reset one or both chrome components to base.",
+    shape: { component: z.enum(CHROME_COMPONENTS).optional() },
+  },
 ];
 
 const text = (t: string, isError = false): ToolOutput => ({ text: t, isError });
@@ -151,13 +189,20 @@ export function buildToolSet(s: Session): ToolSet {
           case "canvas_set_mode":
             return text(await s.setMode(a.mode));
           case "canvas_dom":
-            return text(await s.domOp({ selector: a.selector, op: a.op, content: a.content, all: a.all }, a.persist !== false));
+            return text(
+              await s.domOp({ selector: a.selector, op: a.op, content: a.content, all: a.all }, a.persist !== false),
+            );
           case "canvas_eval": {
             const r = await s.frameRequest({ kind: "eval", js: a.js });
             return r.ok ? text(r.value ?? "undefined") : text(`Error: ${r.error}`, true);
           }
           case "canvas_view":
-            return await s.view({ screenshot: Boolean(a.screenshot), outline: a.outline !== false, selector: a.selector, maxWidth: a.maxWidth ?? 1024 });
+            return await s.view({
+              screenshot: Boolean(a.screenshot),
+              outline: a.outline !== false,
+              selector: a.selector,
+              maxWidth: a.maxWidth ?? 1024,
+            });
           case "canvas_set_title":
             return text(s.setTitle(a.title, "agent"));
           case "canvas_stats":

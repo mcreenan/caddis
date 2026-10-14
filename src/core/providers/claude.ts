@@ -20,7 +20,12 @@ export function resolveClaudeExecutable(): string | undefined {
   if (override) return override;
   const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
   // GUI launches often get a minimal PATH; include the installer's usual spots.
-  dirs.push(path.join(os.homedir(), ".local/bin"), path.join(os.homedir(), ".claude/local"), "/usr/local/bin", "/opt/homebrew/bin");
+  dirs.push(
+    path.join(os.homedir(), ".local/bin"),
+    path.join(os.homedir(), ".claude/local"),
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+  );
   for (const d of dirs) {
     const p = path.join(d, process.platform === "win32" ? "claude.exe" : "claude");
     try {
@@ -47,7 +52,11 @@ class InputQueue implements AsyncIterable<SDKUserMessage> {
   private wake?: () => void;
   private closed = false;
   push(text: string) {
-    this.items.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null } as SDKUserMessage);
+    this.items.push({
+      type: "user",
+      message: { role: "user", content: text },
+      parent_tool_use_id: null,
+    } as SDKUserMessage);
     this.wake?.();
   }
   close() {
@@ -74,12 +83,20 @@ export class ClaudeProvider implements AgentProvider {
     // Ask the CLI itself which models and effort levels this login supports.
     const q = query({ prompt: never, options: { ...baseOptions(), cwd: os.homedir() } });
     // Not in the SDK's typings yet: reports the model and effort the next request would use.
-    const applied = async () => ((await (q as any).getSettings())?.applied ?? {}) as { model?: string; effort?: Effort | null };
+    const applied = async () =>
+      ((await (q as any).getSettings())?.applied ?? {}) as { model?: string; effort?: Effort | null };
     let keepOpen = false;
     try {
-      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out asking the claude CLI for models")), 20000));
-      const [account, rows, current] = await Promise.race([Promise.all([q.accountInfo(), q.supportedModels(), applied()]), timeout]);
-      const who = account.subscriptionType ? `${account.subscriptionType} subscription` : (account.apiKeySource ?? account.tokenSource ?? account.apiProvider ?? "unknown auth");
+      const timeout = new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("timed out asking the claude CLI for models")), 20000),
+      );
+      const [account, rows, current] = await Promise.race([
+        Promise.all([q.accountInfo(), q.supportedModels(), applied()]),
+        timeout,
+      ]);
+      const who = account.subscriptionType
+        ? `${account.subscriptionType} subscription`
+        : (account.apiKeySource ?? account.tokenSource ?? account.apiProvider ?? "unknown auth");
       const toInfo = (m: (typeof rows)[number]): ModelInfo => ({
         id: m.value === "default" ? "" : m.value,
         label: m.displayName,
@@ -100,7 +117,7 @@ export class ClaudeProvider implements AgentProvider {
 
       // Each model's own default effort takes a model switch to learn (~0.5s each); fill them in afterwards.
       keepOpen = true;
-      (async () => {
+      void (async () => {
         try {
           for (const m of models) {
             if (m === first || !m.efforts.length) continue;
@@ -115,7 +132,13 @@ export class ClaudeProvider implements AgentProvider {
         }
       })();
 
-      return { ...info, enabled: true, auth: `${who}${account.email ? ` (${account.email})` : ""}`, models, defaultModel };
+      return {
+        ...info,
+        enabled: true,
+        auth: `${who}${account.email ? ` (${account.email})` : ""}`,
+        models,
+        defaultModel,
+      };
     } catch (e: any) {
       return { ...info, note: `claude CLI did not respond: ${e?.message ?? e}` };
     } finally {
@@ -154,7 +177,7 @@ export class ClaudeProvider implements AgentProvider {
 
     let closed = false;
     const st: StreamState = { msgId: "", streamed: new Set() };
-    (async () => {
+    void (async () => {
       try {
         for await (const msg of q) handle(msg, ctx, st);
       } catch (e: any) {
@@ -205,8 +228,10 @@ function handle(msg: SDKMessage, ctx: ProviderContext, st: StreamState) {
     case "assistant": {
       const content = msg.message.content as any[];
       content.forEach((block, i) => {
-        if (block.type === "text" && !st.streamed.has(msg.message.id)) emit({ type: "text", messageId: `${msg.message.id}:${i}`, text: block.text });
-        else if (block.type === "tool_use") emit({ type: "tool-start", id: block.id, name: block.name, input: block.input });
+        if (block.type === "text" && !st.streamed.has(msg.message.id))
+          emit({ type: "text", messageId: `${msg.message.id}:${i}`, text: block.text });
+        else if (block.type === "tool_use")
+          emit({ type: "tool-start", id: block.id, name: block.name, input: block.input });
       });
       if (msg.error) emit({ type: "fatal", error: `assistant error: ${msg.error}` });
       return;
@@ -227,7 +252,8 @@ function handle(msg: SDKMessage, ctx: ProviderContext, st: StreamState) {
       emit({
         type: "turn-end",
         ok: !msg.is_error && msg.subtype === "success",
-        error: msg.subtype === "success" ? (msg.is_error ? msg.result : undefined) : msg.errors?.join("; ") || msg.subtype,
+        error:
+          msg.subtype === "success" ? (msg.is_error ? msg.result : undefined) : msg.errors?.join("; ") || msg.subtype,
         durationMs: msg.duration_ms,
         costUsd: msg.total_cost_usd,
       });

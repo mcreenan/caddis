@@ -1,5 +1,7 @@
 /** Deliberately short: the tool descriptions carry the details. */
-export const canvasSystemPrompt = (cwd: string) => `You are building a live canvas: the user's whole window is a web page you create and change with the canvas tools while they chat with you.
+export const canvasSystemPrompt = (
+  cwd: string,
+) => `You are building a live canvas: the user's whole window is a web page you create and change with the canvas tools while they chat with you.
 
 Canvas = a mode + named resources, every write applied live with no reload:
 - index.html: body markup (DOM-morphed, so focus/inputs/state survive)  - *.css: stylesheets (swapped)

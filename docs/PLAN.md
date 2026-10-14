@@ -8,16 +8,16 @@ A personal tool. Each window is one Claude session, and the whole window is a li
 
 The canvas is a **by-product of the session**. It is persisted with the session and reopens with it. Sharing comes later, as a self-contained export (§8).
 
-| Area | Decision |
-|---|---|
-| Shell | **Electron first** (Electron 44, electron-vite 6, React 19, TS, Zustand, zod). The web server (`0.0.0.0:5317`, LAN + Tailscale) is a secondary target running the same core. |
-| Agent | **Claude only**, via the Agent SDK driving the installed `claude` CLI so a **Pro/Max subscription** works. The `AgentProvider` interface stays, but Codex and ACP are out of near-term scope. |
-| Canvas model | **Resources held by the core** (`index.html`, `*.css`, `*.js` modules, assets) and **applied in place** by a runtime in the frame. There is no file watching, and a page reload is only an explicit fallback. |
-| Tools | 20 in-process MCP tools across resources, canvas, data, events, chrome and stats (§2). Every write returns the errors and warnings it caused. |
-| State | A per-session **data store** that both the agent and the page read and write reactively. Page activity flows back to the agent. |
-| Chrome | First-class tools (`chrome_get/set/reset`) with clamped props echoed back. The page can call `canvas.chrome.set` through the same clamps. An immutable base, a host-owned titlebar with reset and undo, and an undo that spans chrome and resources. |
-| Sandbox | An iframe with `sandbox="allow-scripts …"` and **no `allow-same-origin`**, so it gets an opaque origin. In Electron it sits on the `canvas://` scheme and runs as an out-of-process iframe. **Network is allowed.** |
-| Monitoring | The runtime collects fps, heap, three.js `renderer.info`, GL contexts and live timers/listeners/rAF. A watchdog flags leaks and fps collapse in write results and in the UI. |
+| Area         | Decision                                                                                                                                                                                                                                             |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell        | **Electron first** (Electron 44, Vite+ with vite-plugin-electron, electron-builder, React 19, TS, Zustand, zod). The web server (`0.0.0.0:5317`, LAN + Tailscale) is a secondary target running the same core.                                       |
+| Agent        | **Claude only**, via the Agent SDK driving the installed `claude` CLI so a **Pro/Max subscription** works. The `AgentProvider` interface stays, but Codex and ACP are out of near-term scope.                                                        |
+| Canvas model | **Resources held by the core** (`index.html`, `*.css`, `*.js` modules, assets) and **applied in place** by a runtime in the frame. There is no file watching, and a page reload is only an explicit fallback.                                        |
+| Tools        | 20 in-process MCP tools across resources, canvas, data, events, chrome and stats (§2). Every write returns the errors and warnings it caused.                                                                                                        |
+| State        | A per-session **data store** that both the agent and the page read and write reactively. Page activity flows back to the agent.                                                                                                                      |
+| Chrome       | First-class tools (`chrome_get/set/reset`) with clamped props echoed back. The page can call `canvas.chrome.set` through the same clamps. An immutable base, a host-owned titlebar with reset and undo, and an undo that spans chrome and resources. |
+| Sandbox      | An iframe with `sandbox="allow-scripts …"` and **no `allow-same-origin`**, so it gets an opaque origin. In Electron it sits on the `canvas://` scheme and runs as an out-of-process iframe. **Network is allowed.**                                  |
+| Monitoring   | The runtime collects fps, heap, three.js `renderer.info`, GL contexts and live timers/listeners/rAF. A watchdog flags leaks and fps collapse in write results and in the UI.                                                                         |
 
 ## 1. Claude integration (the bb approach)
 
@@ -35,15 +35,16 @@ The canvas is a **by-product of the session**. It is persisted with the session 
 
 The core is the source of truth. Each mutation bumps `canvas.rev` and is broadcast to every viewer of the session. The frame **diffs and applies** it, then reports `applied {rev, errors, warnings}`. The tool waits up to 5 s for that report and returns it. Writes therefore come back with something like `applied (rev 7). Errors: scene.js: x is not defined`, so the agent fixes problems without a separate look step.
 
-| Group | Tools | How it applies |
-|---|---|---|
-| Resources | `resource_list`, `resource_read`, `resource_write`, `resource_edit` (exact `old`→`new`, unique match), `resource_delete` | **CSS**: the `<style>` text is swapped. **HTML**: `index.html` is idiomorph-morphed into the body, keeping focus, input values, `[data-ac-keep]` and runtime-owned roots. **JS**: a module swap (below). **Assets**: become blob URLs, bound to `[data-asset]` and CSS `url(asset:name)`. |
-| Canvas | `canvas_set_mode` (`html`, `canvas`, `3d`), `canvas_dom` (selector ops, live or persisted into `index.html`), `canvas_eval` (JS in the page, with `scene`/`camera`/`data`/… in scope), `canvas_view` (errors and console since the last view, a DOM outline, chrome rects, an optional screenshot), `canvas_stats`, `canvas_reload` (explicit full reload) | |
-| Data | `data_get`, `data_set`, `data_delete`, `data_list`, `data_append` | Pushed to every frame; page subscribers re-run. |
-| Events | `events_read` (optionally blocking up to 60 s) | §3 |
-| Chrome | `chrome_get`, `chrome_set(component, props)`, `chrome_reset` | §4 |
+| Group     | Tools                                                                                                                                                                                                                                                                                                                                                      | How it applies                                                                                                                                                                                                                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resources | `resource_list`, `resource_read`, `resource_write`, `resource_edit` (exact `old`→`new`, unique match), `resource_delete`                                                                                                                                                                                                                                   | **CSS**: the `<style>` text is swapped. **HTML**: `index.html` is idiomorph-morphed into the body, keeping focus, input values, `[data-ac-keep]` and runtime-owned roots. **JS**: a module swap (below). **Assets**: become blob URLs, bound to `[data-asset]` and CSS `url(asset:name)`. |
+| Canvas    | `canvas_set_mode` (`html`, `canvas`, `3d`), `canvas_dom` (selector ops, live or persisted into `index.html`), `canvas_eval` (JS in the page, with `scene`/`camera`/`data`/… in scope), `canvas_view` (errors and console since the last view, a DOM outline, chrome rects, an optional screenshot), `canvas_stats`, `canvas_reload` (explicit full reload) |                                                                                                                                                                                                                                                                                           |
+| Data      | `data_get`, `data_set`, `data_delete`, `data_list`, `data_append`                                                                                                                                                                                                                                                                                          | Pushed to every frame; page subscribers re-run.                                                                                                                                                                                                                                           |
+| Events    | `events_read` (optionally blocking up to 60 s)                                                                                                                                                                                                                                                                                                             | §3                                                                                                                                                                                                                                                                                        |
+| Chrome    | `chrome_get`, `chrome_set(component, props)`, `chrome_reset`                                                                                                                                                                                                                                                                                               | §4                                                                                                                                                                                                                                                                                        |
 
 **JS module lifecycle.**
+
 - Entries are the modules that no other module imports. Each entry exports `default function setup(ctx)` and may return a dispose function.
 - Relative imports are rewritten to blob URLs, and each module is cached by rev plus its dependencies' URLs. Editing a module re-runs **only the entries whose import closure changed**.
 - `ctx` provides:
@@ -95,8 +96,8 @@ Why not the file-backed design from the draft? Watching a directory implies relo
   - DOM size, live modules, timers, rAFs, listeners and WebGL contexts.
   - three.js `renderer.info` (geometries, textures, programs, calls, triangles) and the scene object count.
 - **Watchdog**:
-  - *Leak*: after each module swap, a metric is sampled for the same set of entries. If it rose on each of the last 3 swaps, that is flagged ("possible leak: dom grew 41 → 42 → 43 → 44 …").
-  - *fps collapse*: after the page has reached ≥ 40 fps, < 20 fps for 3 s is flagged.
+  - _Leak_: after each module swap, a metric is sampled for the same set of entries. If it rose on each of the last 3 swaps, that is flagged ("possible leak: dom grew 41 → 42 → 43 → 44 …").
+  - _fps collapse_: after the page has reached ≥ 40 fps, < 20 fps for 3 s is flagged.
   - Warnings are returned in the write that caused them, shown in the titlebar status and as a badge on the mini history button, and reported by `canvas_stats`.
 - **Electron**: `canvas_stats` adds the canvas frame's OS process (pid, memory, CPU) from `app.getAppMetrics()` and `frame.osProcessId`, plus whether it is separate from the host. The titlebar polls the same numbers every 2 s (`ac:processStats`).
 
@@ -128,7 +129,7 @@ BrowserWindow (one per session; host renderer: React titlebar + chrome)
 - **Native features**: a directory picker for the cwd, `capturePage()` screenshots for `canvas_view`, Ctrl/Cmd+N or File → New Window for a new session window, File → Open/Save for `.caddis` artifacts (§7), and `--session=<id>` or `CADDIS_SESSION` to reopen a session.
 - **Linux/Wayland**:
   - Electron's `auto` ozone hint keys off `XDG_SESSION_TYPE`, which shells outside the login session often lack.
-  - `scripts/with-display.mjs` sets it when `WAYLAND_DISPLAY` is present. Verified on Hyprland: a native Wayland window, with WebGL working.
+  - `scripts/electron.mjs` (and `vp dev`) set it when `WAYLAND_DISPLAY` is present. Verified on Hyprland: a native Wayland window, with WebGL working.
 - **Web target**:
   - Binds `0.0.0.0:5317` for LAN and Tailscale. The WebSocket upgrade requires `Origin` to equal `Host`.
   - **There is no auth.** Run it only on trusted networks, and never with Funnel or port forwarding.
@@ -137,6 +138,7 @@ BrowserWindow (one per session; host renderer: React titlebar + chrome)
 ## 7. Persistence
 
 `<dataDir>/sessions/<id>.json` (v2) holds:
+
 - the config and the Claude session id;
 - history, canvas (mode, rev, resources) and data;
 - chrome overrides;
@@ -146,6 +148,7 @@ BrowserWindow (one per session; host renderer: React titlebar + chrome)
 Saves are debounced and atomic (write then rename) and flushed on quit. Electron's `dataDir` is `userData/data`; the web server uses `./data`. `CADDIS_DATA_DIR` overrides both.
 
 **Artifacts (`.caddis`)** are the portable form of a session: a zip with a checksummed `manifest.json`, `data.json`, `history.json`, `canvas/*`, Claude Code's transcript (`claude/transcript.jsonl`), files the agent wrote with Write/Edit (`workspace/*`), chrome, activity, undo and a `preview.png`. Built and parsed in `src/core/artifact.ts`.
+
 - **Open** creates a new session. The transcript is installed into the CLI's project directory for the session's cwd (never overwriting), and the first run resumes it with `forkSession`, so the original conversation stays untouched.
 - Workspace files are restored only into the original cwd and only where missing.
 - Electron main shows native dialogs and remembers the file for Save. The web build exchanges the file over the WebSocket (`artifact.export` / `artifact.import`).
@@ -155,10 +158,12 @@ Saves are debounced and atomic (write then rename) and flushed on quit. Electron
 **Decided:** restoring a canvas version does not rewind the conversation; undo covers the canvas and chrome only.
 
 **Open questions**
+
 1. **Standalone export for sharing.** `.caddis` artifacts (§7) need Caddis to open. A viewer-only export is still open: the likely shape is a single HTML file with inlined resources, vendored libs, a data snapshot and a stub `canvas` API (data persisted to `localStorage`, `emit` a no-op). An MCP App (`text/html;profile=mcp-app`) is another candidate.
 2. **Canvas-initiated turns.** Should `canvas.emit(…, {wake: true})` start a turn, rate-limited?
 
 **Next steps**, roughly in order:
+
 1. An approvals UI for non-preapproved tools.
 2. A session list and switcher.
 3. Self-contained HTML export (`.caddis` save/open is done).
@@ -169,13 +174,13 @@ Saves are debounced and atomic (write then rename) and flushed on quit. Electron
 
 **Risks**
 
-| Risk | Mitigation |
-|---|---|
-| The SDK or CLI changes (0.x) | A thin provider, versions pinned, and the E2E runs a real turn |
-| Subscription terms for third-party use of the CLI | It's a personal tool on the user's own login; revisit before any distribution |
-| Leaks the tracker can't see (globals, detached DOM, GPU memory outside three) | The watchdog trend check, `canvas_stats`, and an explicit `canvas_reload` |
-| Prompt injection via page activity or fetched content | Activity is wrapped as data; no wake; tool permissions are default-deny |
-| Unauthenticated web target | LAN/Tailscale only (documented); auth is next-steps item 6 |
+| Risk                                                                          | Mitigation                                                                    |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| The SDK or CLI changes (0.x)                                                  | A thin provider, versions pinned, and the E2E runs a real turn                |
+| Subscription terms for third-party use of the CLI                             | It's a personal tool on the user's own login; revisit before any distribution |
+| Leaks the tracker can't see (globals, detached DOM, GPU memory outside three) | The watchdog trend check, `canvas_stats`, and an explicit `canvas_reload`     |
+| Prompt injection via page activity or fetched content                         | Activity is wrapped as data; no wake; tool permissions are default-deny       |
+| Unauthenticated web target                                                    | LAN/Tailscale only (documented); auth is next-steps item 6                    |
 
 ## References
 

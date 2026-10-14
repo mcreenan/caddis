@@ -31,7 +31,14 @@ import {
   type SessionTitle,
   type UndoInfo,
 } from "../shared/protocol";
-import { artifactFilename, buildArtifact, installTranscript, restoreWorkspace, sessionTitle, type ParsedArtifact } from "./artifact";
+import {
+  artifactFilename,
+  buildArtifact,
+  installTranscript,
+  restoreWorkspace,
+  sessionTitle,
+  type ParsedArtifact,
+} from "./artifact";
 import { applyPatch } from "./dom";
 import type { AgentProvider, AgentRun, ProviderEvent } from "./providers/types";
 import { canvasSystemPrompt } from "./systemPrompt";
@@ -51,9 +58,9 @@ export interface Client {
   kind: "web" | "electron";
   send(msg: ServerMsg): void;
   /** Electron: capturePage of the window (chrome included, as the user sees it). */
-  capture?(maxWidth: number): Promise<{ data: string; mimeType: string } | undefined>;
+  capture?: (maxWidth: number) => Promise<{ data: string; mimeType: string } | undefined>;
   /** Electron: OS-level metrics for the canvas frame's process. */
-  processStats?(): Promise<CanvasStats["process"] | undefined>;
+  processStats?: () => Promise<CanvasStats["process"] | undefined>;
 }
 
 /** One undoable step: the *previous* values of whatever it changed. Spans canvas and chrome. */
@@ -176,19 +183,30 @@ export class Session {
   }
 
   /** `source.path` (Electron) becomes the Save target; `source.name` is only shown. */
-  static fromArtifact(id: string, a: ParsedArtifact, config: SessionConfig, dir: string, provider: AgentProvider, source: ArtifactSource = {}) {
+  static fromArtifact(
+    id: string,
+    a: ParsedArtifact,
+    config: SessionConfig,
+    dir: string,
+    provider: AgentProvider,
+    source: ArtifactSource = {},
+  ) {
     const notes: string[] = [];
     let providerSessionId: string | undefined;
     const origSid = a.manifest.session?.providerSessionId;
     if (a.transcript && origSid && installTranscript(origSid, config.cwd, a.transcript)) providerSessionId = origSid;
-    else if (origSid) notes.push("Claude's transcript could not be restored, so Claude starts this conversation fresh.");
+    else if (origSid)
+      notes.push("Claude's transcript could not be restored, so Claude starts this conversation fresh.");
 
     if (a.workspace.length) {
       if (config.cwd === a.manifest.session?.config?.cwd) {
         const { written, kept } = restoreWorkspace(a.workspace, config.cwd);
         if (written.length) notes.push(`Restored ${written.length} workspace file(s): ${written.join(", ")}.`);
         if (kept.length) notes.push(`Kept ${kept.length} existing workspace file(s) as they are.`);
-      } else notes.push(`The original folder doesn't exist here, so ${a.workspace.length} workspace file(s) stay in the artifact.`);
+      } else
+        notes.push(
+          `The original folder doesn't exist here, so ${a.workspace.length} workspace file(s) stay in the artifact.`,
+        );
     }
 
     const rev = Math.max(Number(a.manifest.canvas.rev) || 0, ...Object.values(a.resources).map((r) => r.rev));
@@ -238,7 +256,10 @@ export class Session {
 
   /** Name the session. The agent can't replace a title the user chose; an empty user title clears it. */
   setTitle(text: string, by: SessionTitle["by"]): string {
-    const t = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, TITLE_MAX);
+    const t = String(text ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, TITLE_MAX);
     if (by === "agent") {
       if (this.d.title?.by === "user") return `Not changed: the user named this canvas "${this.d.title.text}".`;
       if (!t) throw new Error("title is empty");
@@ -248,7 +269,9 @@ export class Session {
     this.broadcast({ t: "title", title: this.d.title });
     if (!t) return "Title cleared.";
     const file = this.d.artifactPath && path.basename(this.d.artifactPath);
-    return file ? `Title set to "${t}". The titlebar keeps showing the file name ${file} while the session is saved to it.` : `Title set to "${t}".`;
+    return file
+      ? `Title set to "${t}". The titlebar keeps showing the file name ${file} while the session is saved to it.`
+      : `Title set to "${t}".`;
   }
 
   get artifactPath() {
@@ -427,14 +450,26 @@ export class Session {
         if (item && item.kind === "tool") {
           item.state = e.isError ? "error" : "done";
           item.result = e.result.slice(0, 4000);
-          this.broadcast({ t: "history.update", id: item.id, patch: { state: item.state, result: item.result } as Partial<HistoryItem> });
+          this.broadcast({
+            t: "history.update",
+            id: item.id,
+            patch: { state: item.state, result: item.result } as Partial<HistoryItem>,
+          });
           this.save();
         }
         this.setStatus("thinking");
         return;
       }
       case "turn-end":
-        this.addItem({ id: randomUUID(), ts: Date.now(), kind: "turn", ok: e.ok, error: e.error, durationMs: e.durationMs, costUsd: e.costUsd });
+        this.addItem({
+          id: randomUUID(),
+          ts: Date.now(),
+          kind: "turn",
+          ok: e.ok,
+          error: e.error,
+          durationMs: e.durationMs,
+          costUsd: e.costUsd,
+        });
         this.setStatus(e.ok ? "idle" : "error", e.error);
         return;
       case "fatal":
@@ -521,7 +556,8 @@ export class Session {
   }
 
   private checkName(name: string) {
-    if (typeof name !== "string" || !RESOURCE_NAME_RE.test(name)) throw new Error(`invalid resource name "${name}" (letters, digits, _ . - /; no "..")`);
+    if (typeof name !== "string" || !RESOURCE_NAME_RE.test(name))
+      throw new Error(`invalid resource name "${name}" (letters, digits, _ . - /; no "..")`);
   }
 
   private makeResource(name: string, content: string, opts: { encoding?: "utf8" | "base64"; mime?: string }): Resource {
@@ -534,7 +570,15 @@ export class Session {
       opts.mime ??
       ({ html: "text/html", css: "text/css", js: "text/javascript" } as Record<string, string>)[kind] ??
       guessMime(name, binary);
-    return { name, kind, mime, size, rev: 0, updatedAt: Date.now(), ...(binary ? { base64: content } : { text: content }) };
+    return {
+      name,
+      kind,
+      mime,
+      size,
+      rev: 0,
+      updatedAt: Date.now(),
+      ...(binary ? { base64: content } : { text: content }),
+    };
   }
 
   describeResources() {
@@ -545,7 +589,8 @@ export class Session {
 
   readResource(name: string, offset = 1, limit = 2000) {
     const r = this.d.canvas.resources[name];
-    if (!r) throw new Error(`no resource "${name}"; existing: ${Object.keys(this.d.canvas.resources).join(", ") || "none"}`);
+    if (!r)
+      throw new Error(`no resource "${name}"; existing: ${Object.keys(this.d.canvas.resources).join(", ") || "none"}`);
     if (r.text === undefined) return `${name}: binary asset, ${r.mime}, ${kb(r.size)}`;
     const lines = r.text.split("\n");
     const slice = lines.slice(offset - 1, offset - 1 + limit);
@@ -569,7 +614,10 @@ export class Session {
     if (oldStr === newStr) throw new Error("old_string and new_string are identical");
     const count = oldStr ? r.text.split(oldStr).length - 1 : 0;
     if (count === 0) throw new Error(`old_string not found in ${name}. Use resource_read to see the current text.`);
-    if (count > 1 && !all) throw new Error(`old_string matches ${count} places in ${name}; add context to make it unique or pass replace_all`);
+    if (count > 1 && !all)
+      throw new Error(
+        `old_string matches ${count} places in ${name}; add context to make it unique or pass replace_all`,
+      );
     const text = all ? r.text.split(oldStr).join(newStr) : r.text.replace(oldStr, () => newStr);
     const rev = this.commitResource(`edit ${name}`, name, this.makeResource(name, text, { mime: r.mime }));
     return `Edited ${name} (${all ? count : 1} replacement${count > 1 && all ? "s" : ""}). ${this.formatReport(await this.awaitApplied(rev))}`;
@@ -599,13 +647,23 @@ export class Session {
     }
     const cur = this.d.canvas.resources["index.html"]?.text ?? "";
     const { html, matched } = applyPatch(cur, patch);
-    if (!matched) return `No element in index.html matches ${patch.selector} (use persist:false for elements created by JS).`;
-    const rev = this.commitResource(`dom ${patch.op} ${patch.selector}`, "index.html", this.makeResource("index.html", html, {}));
+    if (!matched)
+      return `No element in index.html matches ${patch.selector} (use persist:false for elements created by JS).`;
+    const rev = this.commitResource(
+      `dom ${patch.op} ${patch.selector}`,
+      "index.html",
+      this.makeResource("index.html", html, {}),
+    );
     return `Patched ${matched} element(s) in index.html. ${this.formatReport(await this.awaitApplied(rev))}`;
   }
 
   clearCanvas() {
-    const e: UndoEntry = { label: "clear canvas", ts: Date.now(), mode: this.d.canvas.mode, res: { ...this.d.canvas.resources } };
+    const e: UndoEntry = {
+      label: "clear canvas",
+      ts: Date.now(),
+      mode: this.d.canvas.mode,
+      res: { ...this.d.canvas.resources },
+    };
     this.pushUndo(e);
     this.d.canvas = { mode: "html", rev: this.d.canvas.rev + 1, resources: {} };
     this.broadcast({ t: "canvas.state", canvas: this.d.canvas });
@@ -657,7 +715,9 @@ export class Session {
       return this.ready.size === 0
         ? `Saved (rev ${r.rev}); no canvas viewer is open, so it was not verified.`
         : `Saved (rev ${r.rev}); the viewer did not confirm within ${APPLY_WAIT_MS / 1000}s.`;
-    let s = r.errors.length ? `Applied live (rev ${r.rev}) with ${r.errors.length} error(s):\n${r.errors.map((e) => `- ${e}`).join("\n")}` : `Applied live (rev ${r.rev}), no errors.`;
+    let s = r.errors.length
+      ? `Applied live (rev ${r.rev}) with ${r.errors.length} error(s):\n${r.errors.map((e) => `- ${e}`).join("\n")}`
+      : `Applied live (rev ${r.rev}), no errors.`;
     if (r.warnings.length) s += `\nWatchdog:\n${r.warnings.map((w) => `- ${w}`).join("\n")}`;
     return s;
   }
@@ -703,21 +763,41 @@ export class Session {
   async view(o: { screenshot: boolean; outline: boolean; selector?: string; maxWidth: number }): Promise<ToolOutput> {
     const native = o.screenshot ? this.primary?.capture : undefined;
     const maxWidth = Math.max(64, Math.min(2048, o.maxWidth));
-    const r = await this.frameRequest({ kind: "view", outline: o.outline, selector: o.selector, screenshot: o.screenshot && !native, maxWidth });
+    const r = await this.frameRequest({
+      kind: "view",
+      outline: o.outline,
+      selector: o.selector,
+      screenshot: o.screenshot && !native,
+      maxWidth,
+    });
     const since = this.consoleBuf.filter((c) => c.seq > this.viewCursor);
     this.viewCursor = this.consoleSeq;
     const errors = since.filter((c) => c.level === "error" || c.level === "warn");
     const logs = since.filter((c) => c.level === "log" || c.level === "info").slice(-30);
     const parts: string[] = [`mode ${this.d.canvas.mode}, rev ${this.d.canvas.rev}`];
-    parts.push(errors.length ? `Errors/warnings since last view:\n${errors.map((e) => `- [${e.level}] ${e.message}`).join("\n")}` : "No errors since last view.");
+    parts.push(
+      errors.length
+        ? `Errors/warnings since last view:\n${errors.map((e) => `- [${e.level}] ${e.message}`).join("\n")}`
+        : "No errors since last view.",
+    );
     if (logs.length) parts.push(`Console:\n${logs.map((e) => `- ${e.message}`).join("\n")}`);
     if (r.ok && r.value) parts.push(r.value);
     if (!r.ok) parts.push(`(page did not answer: ${r.error})`);
     const rects = this.chromeRects();
-    if (rects) parts.push(`Chrome: prompt ${fmtRect(rects.prompt)}, history ${fmtRect(rects.history)}${this.d.chrome.history.mode === "mini" ? " (mini)" : ""}`);
+    if (rects)
+      parts.push(
+        `Chrome: prompt ${fmtRect(rects.prompt)}, history ${fmtRect(rects.history)}${this.d.chrome.history.mode === "mini" ? " (mini)" : ""}`,
+      );
     let image = r.image;
     if (native) image = await native(maxWidth).catch(() => undefined);
-    if (o.screenshot) parts.push(image ? (native ? "Screenshot: the window as the user sees it (chrome included)." : "Screenshot: the page (chrome not included).") : "Screenshot unavailable.");
+    if (o.screenshot)
+      parts.push(
+        image
+          ? native
+            ? "Screenshot: the window as the user sees it (chrome included)."
+            : "Screenshot: the page (chrome not included)."
+          : "Screenshot unavailable.",
+      );
     return { text: parts.join("\n\n"), image };
   }
 
@@ -742,7 +822,8 @@ export class Session {
   }
 
   private checkKey(key: string) {
-    if (typeof key !== "string" || !key || key.length > 200) throw new Error("data key must be a non-empty string (max 200 chars)");
+    if (typeof key !== "string" || !key || key.length > 200)
+      throw new Error("data key must be a non-empty string (max 200 chars)");
   }
 
   dataGet(key: string) {
@@ -774,7 +855,9 @@ export class Session {
   }
 
   dataList(prefix = "") {
-    const keys = Object.keys(this.d.data).filter((k) => k.startsWith(prefix)).sort();
+    const keys = Object.keys(this.d.data)
+      .filter((k) => k.startsWith(prefix))
+      .sort();
     return keys.map((k) => `${k} = ${preview(this.d.data[k], 120)}`).join("\n") || "(empty)";
   }
 
@@ -803,7 +886,9 @@ export class Session {
     const emits = evs.filter((e) => e.type === "emit").slice(-30);
     const lines = [
       ...emits.map((e) => `emit ${e.name} ${preview(e.payload, 300)}`),
-      ...[...lastSet.values()].map((e) => (e.type === "data.delete" ? `data ${e.name} deleted` : `data ${e.name} = ${preview(e.payload, 300)}`)),
+      ...[...lastSet.values()].map((e) =>
+        e.type === "data.delete" ? `data ${e.name} deleted` : `data ${e.name} = ${preview(e.payload, 300)}`,
+      ),
     ];
     return lines.join("\n");
   }
@@ -849,7 +934,10 @@ export class Session {
 
   chromeGet() {
     return {
-      current: { prompt: effectiveProps("prompt", this.d.chrome.prompt), history: effectiveProps("history", this.d.chrome.history) },
+      current: {
+        prompt: effectiveProps("prompt", this.d.chrome.prompt),
+        history: effectiveProps("history", this.d.chrome.history),
+      },
       overrides: this.d.chrome,
       base: CHROME_BASE,
       limits: CHROME_LIMITS,
@@ -862,7 +950,11 @@ export class Session {
     if (component !== "prompt" && component !== "history") throw new Error('component must be "prompt" or "history"');
     const { props, reset, notes } = normaliseChromeProps(component, input);
     if (Object.keys(props).length || reset.length) {
-      this.pushUndo({ label: `${source}: chrome ${component}`, ts: Date.now(), chrome: structuredClone(this.d.chrome) });
+      this.pushUndo({
+        label: `${source}: chrome ${component}`,
+        ts: Date.now(),
+        chrome: structuredClone(this.d.chrome),
+      });
       const next = { ...this.d.chrome[component], ...props };
       for (const k of reset) delete next[k];
       this.d.chrome = { ...this.d.chrome, [component]: next };
@@ -876,14 +968,19 @@ export class Session {
   }
 
   chromeReset(component?: ChromeComponent) {
-    this.pushUndo({ label: `chrome reset ${component ?? "all"}`, ts: Date.now(), chrome: structuredClone(this.d.chrome) });
+    this.pushUndo({
+      label: `chrome reset ${component ?? "all"}`,
+      ts: Date.now(),
+      chrome: structuredClone(this.d.chrome),
+    });
     this.d.chrome = component ? { ...this.d.chrome, [component]: {} } : emptyChrome();
     this.broadcast({ t: "chrome.state", chrome: this.d.chrome });
     this.save();
   }
 }
 
-const fmtRect = (r: { x: number; y: number; width: number; height: number }) => `x=${r.x} y=${r.y} w=${r.width} h=${r.height}`;
+const fmtRect = (r: { x: number; y: number; width: number; height: number }) =>
+  `x=${r.x} y=${r.y} w=${r.width} h=${r.height}`;
 
 function guessMime(name: string, binary: boolean) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";

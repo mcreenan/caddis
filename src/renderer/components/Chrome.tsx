@@ -45,7 +45,11 @@ export function chromeStyle(applied: ChromeApplyResult["applied"], rect?: Rect):
   };
 }
 
-const useApplied = (component: ChromeComponent) => effectiveProps(component, useUi((s) => s.chrome[component]));
+const useApplied = (component: ChromeComponent) =>
+  effectiveProps(
+    component,
+    useUi((s) => s.chrome[component]),
+  );
 
 export function PromptBar() {
   const applied = useApplied("prompt");
@@ -147,7 +151,11 @@ export function HistoryPanel() {
     );
   }
   return (
-    <section className={`chrome-box chrome-history st-${status}`} data-testid="history" style={{ ...chromeStyle(applied, rect), height: rect.height }}>
+    <section
+      className={`chrome-box chrome-history st-${status}`}
+      data-testid="history"
+      style={{ ...chromeStyle(applied, rect), height: rect.height }}
+    >
       <HistoryList items={history} />
     </section>
   );
@@ -156,7 +164,12 @@ export function HistoryPanel() {
 /** Stays mounted while hidden so a half-typed prompt survives. */
 export function ChromeLayer({ hidden }: { hidden?: boolean }) {
   return (
-    <div className="chrome-layer" hidden={hidden} data-testid="overlay" style={{ zIndex: CHROME_Z, ["--margin" as string]: `${CHROME_MARGIN}px` }}>
+    <div
+      className="chrome-layer"
+      hidden={hidden}
+      data-testid="overlay"
+      style={{ zIndex: CHROME_Z, ["--margin" as string]: `${CHROME_MARGIN}px` }}
+    >
       <HistoryPanel />
       <PromptBar />
     </div>

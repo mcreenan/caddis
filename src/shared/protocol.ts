@@ -56,7 +56,18 @@ export function resourceKind(name: string): ResourceKind {
 
 export const RESOURCE_NAME_RE = /^(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9_./-]{0,99}$/;
 
-export const DOM_OPS = ["replace", "inner", "append", "prepend", "before", "after", "remove", "attr", "style", "text"] as const;
+export const DOM_OPS = [
+  "replace",
+  "inner",
+  "append",
+  "prepend",
+  "before",
+  "after",
+  "remove",
+  "attr",
+  "style",
+  "text",
+] as const;
 export type DomOp = (typeof DOM_OPS)[number];
 export interface DomPatch {
   selector: string;
@@ -119,7 +130,17 @@ export interface CanvasStats {
 
 export const CHROME_COMPONENTS = ["prompt", "history"] as const;
 export type ChromeComponent = (typeof CHROME_COMPONENTS)[number];
-export const ANCHORS = ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"] as const;
+export const ANCHORS = [
+  "top-left",
+  "top",
+  "top-right",
+  "left",
+  "center",
+  "right",
+  "bottom-left",
+  "bottom",
+  "bottom-right",
+] as const;
 export type Anchor = (typeof ANCHORS)[number];
 export const FONTS = ["system", "serif", "mono", "rounded"] as const;
 export const SHADOWS = ["none", "soft", "strong", "glow"] as const;
@@ -200,7 +221,15 @@ export type HistoryItem =
   | { id: string; ts: number; kind: "user"; text: string; attached?: string }
   | { id: string; ts: number; kind: "assistant"; text: string }
   | { id: string; ts: number; kind: "thinking"; text: string }
-  | { id: string; ts: number; kind: "tool"; name: string; input: unknown; state: "running" | "done" | "error"; result?: string }
+  | {
+      id: string;
+      ts: number;
+      kind: "tool";
+      name: string;
+      input: unknown;
+      state: "running" | "done" | "error";
+      result?: string;
+    }
   | { id: string; ts: number; kind: "turn"; ok: boolean; error?: string; durationMs?: number; costUsd?: number }
   | { id: string; ts: number; kind: "notice"; level: "info" | "error"; text: string };
 
@@ -266,7 +295,13 @@ export type ClientMsg =
   | { t: "frame.result"; requestId: string; result: FrameResult }
   | { t: "frame.data"; key: string; value?: unknown; deleted?: boolean }
   | { t: "frame.emit"; name: string; payload?: unknown }
-  | { t: "frame.chrome"; requestId: string; component: ChromeComponent; props?: Record<string, unknown>; reset?: boolean }
+  | {
+      t: "frame.chrome";
+      requestId: string;
+      component: ChromeComponent;
+      props?: Record<string, unknown>;
+      reset?: boolean;
+    }
   | { t: "frame.stats"; stats: CanvasStats }
   // user actions (titlebar and menu)
   | { t: "chrome.set"; component: ChromeComponent; props: Record<string, unknown> }
@@ -324,7 +359,15 @@ export type ToFrameMsg =
   | { type: "chrome.result"; id: string; result: unknown };
 
 /** Titlebar/menu actions. Electron main sends them to the focused window for native menu items and shortcuts. */
-export type UiCommand = "overlay" | "history" | "resetOverlay" | "undo" | "redo" | "reloadCanvas" | "clearCanvas" | "rename";
+export type UiCommand =
+  | "overlay"
+  | "history"
+  | "resetOverlay"
+  | "undo"
+  | "redo"
+  | "reloadCanvas"
+  | "clearCanvas"
+  | "rename";
 
 export type FromFrameMsg =
   | { type: "hello" }

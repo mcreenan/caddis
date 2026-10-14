@@ -9,7 +9,8 @@ function toolSummary(input: unknown) {
   if (!input || typeof input !== "object") return "";
   const i = input as Record<string, unknown>;
   const parts: string[] = [];
-  for (const k of ["name", "mode", "component", "key", "selector", "op", "file_path", "pattern"]) if (typeof i[k] === "string") parts.push(String(i[k]));
+  for (const k of ["name", "mode", "component", "key", "selector", "op", "file_path", "pattern"])
+    if (typeof i[k] === "string") parts.push(String(i[k]));
   if (typeof i.js === "string") parts.push(i.js.slice(0, 60));
   return parts.join(" · ");
 }

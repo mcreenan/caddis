@@ -1,12 +1,15 @@
+/// <reference lib="dom" />
+// ^ DOM types for the page.evaluate callbacks, which run in the browser.
 // End-to-end against a real Claude turn (subscription login; no API key).
-//   npm run e2e                                   # Electron (default): launches out/main via Playwright
-//   TARGET=web BASE=http://192.168.86.73:5317 npm run e2e   # against a running `npm run serve`
+//   vp run e2e                                    # Electron (default): builds, then launches out/main via Playwright
+//   TARGET=web BASE=http://192.168.86.73:5317 vp run e2e:only   # against a running `vp run web`
 // Env: MODEL (default: host default), EFFORT (default low), DATA (web: the server's data dir).
 // Artifacts (screenshots, summary.json) go to .e2e/<target>/.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { _electron, chromium, type ElectronApplication, type Frame, type Page } from "playwright-core";
+import { expect, test } from "vite-plus/test";
 import { parseArtifact } from "../src/core/artifact";
 
 const TARGET = process.env.TARGET === "web" ? "web" : "electron";
@@ -31,8 +34,14 @@ let page: Page;
 let sessionId = "";
 
 const session = () => JSON.parse(readFileSync(path.join(DATA, "sessions", `${sessionId}.json`), "utf8"));
-const turns = () => (existsSync(path.join(DATA, "sessions", `${sessionId}.json`)) ? session().history.filter((h: any) => h.kind === "turn").length : 0);
-const toolsSince = (n: number) => session().history.slice(n).filter((h: any) => h.kind === "tool");
+const turns = () =>
+  existsSync(path.join(DATA, "sessions", `${sessionId}.json`))
+    ? session().history.filter((h: any) => h.kind === "turn").length
+    : 0;
+const toolsSince = (n: number) =>
+  session()
+    .history.slice(n)
+    .filter((h: any) => h.kind === "tool");
 const shot = (name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`) });
 
 async function frame(): Promise<Frame> {
@@ -84,8 +93,13 @@ async function turn(text: string) {
   }
   await sleep(800);
   const tools = toolsSince(before);
-  log(`turn done in ${((Date.now() - t0) / 1000).toFixed(0)}s; tools:`, tools.map((t: any) => t.name.replace("mcp__canvas__", "")).join(", "));
-  const last = session().history.filter((h: any) => h.kind === "turn").at(-1);
+  log(
+    `turn done in ${((Date.now() - t0) / 1000).toFixed(0)}s; tools:`,
+    tools.map((t: any) => t.name.replace("mcp__canvas__", "")).join(", "),
+  );
+  const last = session()
+    .history.filter((h: any) => h.kind === "turn")
+    .at(-1);
   if (!last.ok) log("turn error:", last.error);
   return tools as { name: string; input: any; result?: string; state: string }[];
 }
@@ -100,24 +114,35 @@ async function main() {
   // ---------------------------------------------------------------- 0. start screen
   await launch();
   await page.waitForSelector('[data-testid="start"]');
-  await page.waitForFunction(() => document.querySelector('[data-testid="start"] select option:nth-child(2)'), null, { timeout: 60_000 });
+  await page.waitForFunction(() => document.querySelector('[data-testid="start"] select option:nth-child(2)'), null, {
+    timeout: 60_000,
+  });
   const auth = (await page.locator('[data-testid="auth"]').textContent()) ?? "";
   summary.auth = auth;
   check("start screen shows subscription auth", /subscription/i.test(auth), auth);
-  check("no chrome before the session starts", (await page.locator('[data-testid="prompt"], [data-testid="history"]').count()) === 0);
+  check(
+    "no chrome before the session starts",
+    (await page.locator('[data-testid="prompt"], [data-testid="history"]').count()) === 0,
+  );
   await shot("0-start");
 
   // ---------------------------------------------------------------- 1. 3d scene
   const start = page.locator('[data-testid="start"]');
   if (MODEL) await start.locator("select").nth(0).selectOption(MODEL);
-  await start.locator("select").nth(1).selectOption(EFFORT).catch(() => log("effort", EFFORT, "not offered"));
+  await start
+    .locator("select")
+    .nth(1)
+    .selectOption(EFFORT)
+    .catch(() => log("effort", EFFORT, "not offered"));
   await start.locator('[data-testid="cwd"]').click();
   await start.locator("input").fill(CWD);
   await start.locator("input").press("Enter");
-  await start.locator("textarea").fill(
-    "Make this window a 3D scene with a single spinning cube. Use 3d mode and one module named scene.js. " +
-      "Keep the rotation angle in ctx.state.angle (initialise it only if undefined) and advance it in onFrame, so later edits keep the angle. Keep it minimal.",
-  );
+  await start
+    .locator("textarea")
+    .fill(
+      "Make this window a 3D scene with a single spinning cube. Use 3d mode and one module named scene.js. " +
+        "Keep the rotation angle in ctx.state.angle (initialise it only if undefined) and advance it in onFrame, so later edits keep the angle. Keep it minimal.",
+    );
   await start.locator("textarea").press("Enter");
   await page.waitForURL(/[?&]s=/, { timeout: 30_000 });
   sessionId = new URL(page.url()).searchParams.get("s")!;
@@ -131,9 +156,14 @@ async function main() {
   await sleep(1500);
   const firstTools = toolsSince(0);
   summary.turn1Tools = firstTools.map((t: any) => t.name);
-  const s1 = await fe<any>(`({ mode: __ac.rt.mode, entries: [...__ac.entries.keys()], angle: __ac.states.get("scene.js")?.angle, stats: __ac.stats() })`);
+  const s1 = await fe<any>(
+    `({ mode: __ac.rt.mode, entries: [...__ac.entries.keys()], angle: __ac.states.get("scene.js")?.angle, stats: __ac.stats() })`,
+  );
   summary.turn1 = s1;
-  check("3d mode with scene.js running", s1.mode === "3d" && s1.entries.includes("scene.js"), { mode: s1.mode, entries: s1.entries });
+  check("3d mode with scene.js running", s1.mode === "3d" && s1.entries.includes("scene.js"), {
+    mode: s1.mode,
+    entries: s1.entries,
+  });
   check("ctx.state.angle is advancing", typeof s1.angle === "number" && s1.angle > 0, s1.angle);
   check("three.js scene renders", (s1.stats.three?.triangles ?? 0) > 0, s1.stats.three);
   await shot("1-cube");
@@ -141,7 +171,10 @@ async function main() {
   if (app) {
     const procs = await app.evaluate(({ BrowserWindow }) => {
       const wc = BrowserWindow.getAllWindows()[0].webContents;
-      return { host: wc.mainFrame.osProcessId, frames: wc.mainFrame.framesInSubtree.map((f) => ({ url: f.url, pid: f.osProcessId })) };
+      return {
+        host: wc.mainFrame.osProcessId,
+        frames: wc.mainFrame.framesInSubtree.map((f) => ({ url: f.url, pid: f.osProcessId })),
+      };
     });
     summary.processes = procs;
     const cf = procs.frames.find((f) => f.url.startsWith("canvas://"));
@@ -151,22 +184,41 @@ async function main() {
   // ---------------------------------------------------------------- 2. in-place JS edit
   await fe(`window.__e2eMark = "kept"`);
   const before = await fe<any>(`({ angle: __ac.states.get("scene.js")?.angle, stats: __ac.stats() })`);
-  const tools2 = await turn("Make the cube red. Change only the colour with a small resource_edit on scene.js; do not rewrite the file.");
+  const tools2 = await turn(
+    "Make the cube red. Change only the colour with a small resource_edit on scene.js; do not rewrite the file.",
+  );
   summary.turn2Tools = tools2.map((t) => ({ name: t.name, result: t.result?.slice(0, 300) }));
-  check("agent used resource_edit", tools2.some((t) => t.name.endsWith("resource_edit")), tools2.map((t) => t.name));
+  check(
+    "agent used resource_edit",
+    tools2.some((t) => t.name.endsWith("resource_edit")),
+    tools2.map((t) => t.name),
+  );
   const after = await fe<any>(`(() => {
     const mesh = []; __ac.rt.scene.traverse((o) => o.isMesh && mesh.push(o));
     return { mark: window.__e2eMark, angle: __ac.states.get("scene.js")?.angle, stats: __ac.stats(), colors: mesh.map((m) => m.material?.color?.getHexString?.()) };
   })()`);
   summary.turn2 = after;
   check("no reload: frame globals survived the edit", after.mark === "kept");
-  check("state survived the edit (angle continued, not reset)", after.angle > before.angle, { before: before.angle, after: after.angle });
-  check("cube is red", after.colors.some((c: string) => /^(f|e|d|c)[0-9a-f]0{4}$|^ff[0-3][0-9a-f][0-3][0-9a-f]$/.test(c ?? "")), after.colors);
+  check("state survived the edit (angle continued, not reset)", after.angle > before.angle, {
+    before: before.angle,
+    after: after.angle,
+  });
+  check(
+    "cube is red",
+    after.colors.some((c: string) => /^(f|e|d|c)[0-9a-f]0{4}$|^ff[0-3][0-9a-f][0-3][0-9a-f]$/.test(c ?? "")),
+    after.colors,
+  );
   const keys = ["timers", "rafs", "listeners", "webglContexts"] as const;
   check(
     "no growth in timers/rafs/listeners/GL contexts across the swap",
-    keys.every((k) => after.stats[k] <= before.stats[k]) && (after.stats.three?.geometries ?? 0) <= (before.stats.three?.geometries ?? 0) + 0,
-    Object.fromEntries([...keys, "geometries"].map((k) => [k, [before.stats[k] ?? before.stats.three?.[k], after.stats[k] ?? after.stats.three?.[k]]])),
+    keys.every((k) => after.stats[k] <= before.stats[k]) &&
+      (after.stats.three?.geometries ?? 0) <= (before.stats.three?.geometries ?? 0) + 0,
+    Object.fromEntries(
+      [...keys, "geometries"].map((k) => [
+        k,
+        [before.stats[k] ?? before.stats.three?.[k], after.stats[k] ?? after.stats.three?.[k]],
+      ]),
+    ),
   );
   check("no watchdog warnings after the edit", after.stats.warnings.length === 0, after.stats.warnings);
   await shot("2-red");
@@ -184,11 +236,19 @@ async function main() {
   for (let i = 0; i < 3; i++) await fe(`__ac.rerun("leak.js")`);
   const leaky = await fe<any>(`__ac.stats()`);
   summary.leak = leaky.warnings;
-  check("watchdog flags a deliberately leaky module", leaky.warnings.some((w: string) => /possible leak: dom/.test(w)), leaky.warnings);
-  await page.waitForFunction(() => document.querySelector('[data-testid="titlebar"] [data-testid="warnings"]'), null, { timeout: 5000 }).then(
-    () => check("UI shows the warning indicator", true),
-    () => check("UI shows the warning indicator", false),
+  check(
+    "watchdog flags a deliberately leaky module",
+    leaky.warnings.some((w: string) => /possible leak: dom/.test(w)),
+    leaky.warnings,
   );
+  await page
+    .waitForFunction(() => document.querySelector('[data-testid="titlebar"] [data-testid="warnings"]'), null, {
+      timeout: 5000,
+    })
+    .then(
+      () => check("UI shows the warning indicator", true),
+      () => check("UI shows the warning indicator", false),
+    );
   await shot("3-leak-warning");
   await fe(`__ac.inject("leak.js", null)`);
   await fe(`document.querySelectorAll(".e2e-leak").forEach((d) => d.remove()); window.__e2eLeak = []`);
@@ -203,18 +263,28 @@ async function main() {
       "that marks it done in the data store and calls canvas.emit('task-done', {title}). Keep the cube.",
   );
   summary.turn4Tools = tools4.map((t) => t.name);
-  check("agent used data_set and data_append", ["data_set", "data_append"].every((n) => tools4.some((t) => t.name.endsWith(n))), summary.turn4Tools);
+  check(
+    "agent used data_set and data_append",
+    ["data_set", "data_append"].every((n) => tools4.some((t) => t.name.endsWith(n))),
+    summary.turn4Tools,
+  );
   const f = await frame();
   const tasks = session().data.tasks;
   summary.tasks = tasks;
   check("data store holds 4 tasks", Array.isArray(tasks) && tasks.length === 4, tasks?.length);
   const firstTitle = String(tasks?.[0]?.title ?? "");
-  await f.waitForFunction((t) => document.body.innerText.includes(t), firstTitle, { timeout: 10_000 }).then(
-    () => check("tasks rendered from the data store", true, firstTitle),
-    () => check("tasks rendered from the data store", false, firstTitle),
-  );
+  await f
+    .waitForFunction((t) => document.body.innerText.includes(t), firstTitle, { timeout: 10_000 })
+    .then(
+      () => check("tasks rendered from the data store", true, firstTitle),
+      () => check("tasks rendered from the data store", false, firstTitle),
+    );
   const fourth = String(tasks?.[3]?.title ?? "");
-  check("appended task rendered", fourth !== "" && (await f.evaluate((t) => document.body.innerText.includes(t), fourth)), fourth);
+  check(
+    "appended task rendered",
+    fourth !== "" && (await f.evaluate((t) => document.body.innerText.includes(t), fourth)),
+    fourth,
+  );
   await shot("4-tasks");
 
   // ---------------------------------------------------------------- 5. canvas -> agent
@@ -223,12 +293,19 @@ async function main() {
   await sleep(800);
   const afterClick = session();
   check("click wrote through to the data store", afterClick.data.tasks?.[0]?.done === true, afterClick.data.tasks?.[0]);
-  check("emit recorded as a canvas event", afterClick.events.some((e: any) => e.type === "emit" && e.name === "task-done"), afterClick.events.slice(-3));
+  check(
+    "emit recorded as a canvas event",
+    afterClick.events.some((e: any) => e.type === "emit" && e.name === "task-done"),
+    afterClick.events.slice(-3),
+  );
   const histBefore = session().history.length;
   await turn("What did I just do in the canvas? One sentence, naming the task.");
   const h5 = session().history.slice(histBefore);
   const userItem = h5.find((h: any) => h.kind === "user");
-  const reply = h5.filter((h: any) => h.kind === "assistant").map((h: any) => h.text).join(" ");
+  const reply = h5
+    .filter((h: any) => h.kind === "assistant")
+    .map((h: any) => h.text)
+    .join(" ");
   summary.turn5 = { attached: userItem?.attached, reply };
   check("canvas activity attached to the next turn", !!userItem?.attached, userItem?.attached);
   check("agent reports the emitted event", reply.toLowerCase().includes(firstTitle.toLowerCase().slice(0, 12)), reply);
@@ -240,11 +317,17 @@ async function main() {
     "Restyle the chrome with chrome_set: move the prompt bar to the top centre, set its opacity to 0.3, use the mono font for both the prompt and the history, and switch the history panel to mini mode.",
   );
   summary.turn6Tools = tools6.map((t) => ({ name: t.name, input: t.input, result: t.result?.slice(0, 400) }));
-  check("agent used chrome_set", tools6.some((t) => t.name.endsWith("chrome_set")));
+  check(
+    "agent used chrome_set",
+    tools6.some((t) => t.name.endsWith("chrome_set")),
+  );
   const chrome = session().chrome;
   summary.chrome = chrome;
   const promptBox = await page.locator('[data-testid="prompt"]').boundingBox();
-  check("prompt moved to the top", !!promptBox && !!promptBox0 && promptBox.y < 120 && promptBox0.y > 400, { before: promptBox0, after: promptBox });
+  check("prompt moved to the top", !!promptBox && !!promptBox0 && promptBox.y < 120 && promptBox0.y > 400, {
+    before: promptBox0,
+    after: promptBox,
+  });
   check("opacity clamped to 0.6 (asked 0.3)", chrome.prompt?.opacity === 0.6, chrome);
   check(
     "clamp echoed back to the agent",
@@ -261,10 +344,18 @@ async function main() {
   await page.waitForSelector('[data-testid="titlebar"] [data-testid="fps"]', { timeout: 5000 }).catch(() => {});
   const statusText = (await tb.locator('[data-testid="status"]').textContent()) ?? "";
   summary.titlebarStatus = statusText;
-  check("titlebar shows fps (3d), files and data size", (await tb.locator('[data-testid="fps"], [data-testid="files"], [data-testid="data-size"]').count()) === 3 && /\d+fps/.test(statusText), statusText);
+  check(
+    "titlebar shows fps (3d), files and data size",
+    (await tb.locator('[data-testid="fps"], [data-testid="files"], [data-testid="data-size"]').count()) === 3 &&
+      /\d+fps/.test(statusText),
+    statusText,
+  );
   if (app) {
     await page.waitForSelector('[data-testid="titlebar"] [data-testid="cpu"]', { timeout: 5000 }).catch(() => {});
-    check("titlebar shows canvas memory and cpu (electron)", (await tb.locator('[data-testid="mem"], [data-testid="cpu"]').count()) === 2);
+    check(
+      "titlebar shows canvas memory and cpu (electron)",
+      (await tb.locator('[data-testid="mem"], [data-testid="cpu"]').count()) === 2,
+    );
   }
   await tb.locator('[data-testid="overlay-toggle"]').click();
   check("overlay toggle hides the prompt and history", !(await page.locator('[data-testid="prompt"]').isVisible()));
@@ -284,23 +375,33 @@ async function main() {
   await tb.locator('[data-testid="history-toggle"]').click();
   await page.waitForSelector('[data-testid="history"]', { timeout: 5000 }).catch(() => {});
   for (let i = 0; i < 25 && session().chrome.history?.mode !== "full"; i++) await sleep(200);
-  check("titlebar expands the minimised history", session().chrome.history?.mode === "full" && (await page.locator('[data-testid="history"]').isVisible()));
+  check(
+    "titlebar expands the minimised history",
+    session().chrome.history?.mode === "full" && (await page.locator('[data-testid="history"]').isVisible()),
+  );
   await tb.locator('[data-testid="history-toggle"]').click();
   await page.waitForSelector('[data-testid="history-mini"]', { timeout: 5000 }).catch(() => {});
   for (let i = 0; i < 25 && session().chrome.history?.mode !== "mini"; i++) await sleep(200);
-  check("titlebar minimises the history again", session().chrome.history?.mode === "mini" && (await page.locator('[data-testid="history-mini"]').isVisible()));
+  check(
+    "titlebar minimises the history again",
+    session().chrome.history?.mode === "mini" && (await page.locator('[data-testid="history-mini"]').isVisible()),
+  );
 
   // ---------------------------------------------------------------- 8. persistence across restart
   await close();
   await launch(sessionId);
   const f2 = await frame();
   await sleep(1500);
-  const restored = await f2.evaluate(`(() => {
+  const restored = (await f2.evaluate(`(() => {
     const mesh = []; __ac.rt.scene?.traverse((o) => o.isMesh && mesh.push(o));
     return { mode: __ac.rt.mode, entries: [...__ac.entries.keys()], colors: mesh.map((m) => m.material?.color?.getHexString?.()), text: document.body.innerText.slice(0, 400) };
-  })()`) as any;
+  })()`)) as any;
   summary.restored = restored;
-  check("restart restores the 3d scene", restored.mode === "3d" && restored.entries.includes("scene.js"), restored.entries);
+  check(
+    "restart restores the 3d scene",
+    restored.mode === "3d" && restored.entries.includes("scene.js"),
+    restored.entries,
+  );
   check("restart restores the data-driven tasks", restored.text.includes(firstTitle), restored.text.slice(0, 120));
   const pb = await page.locator('[data-testid="prompt"]').boundingBox();
   check("restart restores the chrome (prompt at top)", !!pb && pb.y < 120, pb);
@@ -322,7 +423,10 @@ async function main() {
     for (let i = 0; i < 50 && !existsSync(file); i++) await sleep(200);
   } else {
     await openFileMenu();
-    const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: /^save(?! as)/i }).click()]);
+    const [dl] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("menuitem", { name: /^save(?! as)/i }).click(),
+    ]);
     await dl.saveAs(file);
   }
   check("saved a .caddis file", existsSync(file));
@@ -331,7 +435,8 @@ async function main() {
   summary.artifact = { files: paths, notes: art.manifest.notes, title: art.manifest.title };
   check(
     "artifact has manifest, data, history, canvas and transcript",
-    ["data.json", "history.json", "canvas/scene.js", "claude/transcript.jsonl"].every((p) => paths.includes(p)) && (art.data.tasks as unknown[] | undefined)?.length === 4,
+    ["data.json", "history.json", "canvas/scene.js", "claude/transcript.jsonl"].every((p) => paths.includes(p)) &&
+      (art.data.tasks as unknown[] | undefined)?.length === 4,
     paths,
   );
   check("artifact has a preview image", paths.includes("preview.png"));
@@ -346,7 +451,10 @@ async function main() {
     page = win;
   } else {
     await openFileMenu();
-    const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByRole("menuitem", { name: /^open/i }).click()]);
+    const [chooser] = await Promise.all([
+      page.waitForEvent("filechooser"),
+      page.getByRole("menuitem", { name: /^open/i }).click(),
+    ]);
     const [tab] = await Promise.all([page.context().waitForEvent("page"), chooser.setFiles(file)]);
     page = tab;
   }
@@ -356,31 +464,45 @@ async function main() {
   sessionId = openedId;
   const f3 = await frame();
   await sleep(1500);
-  const opened = (await f3.evaluate(`({ mode: __ac.rt.mode, entries: [...__ac.entries.keys()], text: document.body.innerText.slice(0, 400) })`)) as any;
-  check("opened artifact restores the scene and tasks", opened.mode === "3d" && opened.entries.includes("scene.js") && opened.text.includes(firstTitle), opened.entries);
+  const opened = (await f3.evaluate(
+    `({ mode: __ac.rt.mode, entries: [...__ac.entries.keys()], text: document.body.innerText.slice(0, 400) })`,
+  )) as any;
+  check(
+    "opened artifact restores the scene and tasks",
+    opened.mode === "3d" && opened.entries.includes("scene.js") && opened.text.includes(firstTitle),
+    opened.entries,
+  );
   const hist9 = session().history.length;
   await turn("What was the very first thing I asked you to build in this conversation? Answer in a few words.");
-  const reply9 = session().history.slice(hist9).filter((h: any) => h.kind === "assistant").map((h: any) => h.text).join(" ");
+  const reply9 = session()
+    .history.slice(hist9)
+    .filter((h: any) => h.kind === "assistant")
+    .map((h: any) => h.text)
+    .join(" ");
   summary.turn9 = reply9;
   check("Claude remembers the conversation after opening", /cube/i.test(reply9), reply9);
   const forked = session().providerSessionId;
-  check("opened session forks Claude's session", !!forked && forked !== origProviderSession, { origProviderSession, forked });
+  check("opened session forks Claude's session", !!forked && forked !== origProviderSession, {
+    origProviderSession,
+    forked,
+  });
   await shot("9-opened");
   await close();
 }
 
-main()
-  .catch(async (e) => {
+test(`caddis e2e (${TARGET})`, async () => {
+  try {
+    await main();
+  } catch (e: any) {
     log("ERROR", e?.stack ?? e);
     checks.push({ name: "run completed", ok: false, detail: String(e?.message ?? e) });
     await page?.screenshot({ path: path.join(OUT, "error.png") }).catch(() => {});
     await close().catch(() => {});
-  })
-  .finally(() => {
+  } finally {
     summary.checks = checks;
     writeFileSync(path.join(OUT, "summary.json"), JSON.stringify(summary, null, 2));
-    const failed = checks.filter((c) => !c.ok);
-    log(`${checks.length - failed.length}/${checks.length} checks passed`);
+    log(`${checks.filter((c) => c.ok).length}/${checks.length} checks passed`);
     rmSync(CWD, { recursive: true, force: true });
-    process.exit(failed.length ? 1 : 0);
-  });
+  }
+  expect(checks.filter((c) => !c.ok)).toEqual([]);
+});

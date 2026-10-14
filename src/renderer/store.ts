@@ -99,7 +99,8 @@ export function reduce(msg: ServerMsg) {
         history: st.history.map((h) => {
           if (h.id !== msg.id) return h;
           const next = { ...h, ...msg.patch } as HistoryItem;
-          if (msg.appendText && "text" in next) (next as { text: string }).text = (h as { text: string }).text + msg.appendText;
+          if (msg.appendText && "text" in next)
+            (next as { text: string }).text = (h as { text: string }).text + msg.appendText;
           return next;
         }),
       }));
@@ -108,7 +109,13 @@ export function reduce(msg: ServerMsg) {
     case "canvas.mode":
       return set((st) => ({ canvas: { ...st.canvas, mode: msg.mode, rev: msg.rev } }));
     case "canvas.resource":
-      return set((st) => ({ canvas: { ...st.canvas, rev: msg.rev, resources: { ...st.canvas.resources, [msg.resource.name]: msg.resource } } }));
+      return set((st) => ({
+        canvas: {
+          ...st.canvas,
+          rev: msg.rev,
+          resources: { ...st.canvas.resources, [msg.resource.name]: msg.resource },
+        },
+      }));
     case "canvas.delete":
       return set((st) => {
         const resources = { ...st.canvas.resources };
