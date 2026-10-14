@@ -27,9 +27,9 @@ The canvas is a **by-product of the session**. It is persisted with the session 
 - `persistSession: true`, and a later turn resumes with `resume: <providerSessionId>`. Sessions therefore survive app restarts.
 - `includePartialMessages` streams text and thinking deltas into the history.
 - **Models and efforts come from the host**: `supportedModels()` and `accountInfo()` at discovery. Nothing is hard-coded. Discovery is retried after 30 s if it fails.
-- Canvas tools come from `createSdkMcpServer` (in-process, `alwaysLoad`). `Read/Glob/Grep/WebFetch/WebSearch` and the canvas tools are pre-approved, with `permissionMode: "dontAsk"`.
-  - Shell and file writes in the cwd are therefore denied unless the user's own settings allow them.
-  - An approvals UI is future work (§8). `AGENT_CANVAS_PERMISSION_MODE` overrides the mode.
+- Canvas tools come from `createSdkMcpServer` (in-process, `alwaysLoad`). `Read/Glob/Grep/WebFetch/WebSearch/TodoWrite` and the canvas tools are pre-approved.
+  - **Edits and commands in the working directory are allowed by default:** `permissionMode: "acceptEdits"` auto-accepts file edits in the cwd, and Bash runs in Claude Code's sandbox (`autoAllowBashIfSandboxed`, `allowUnsandboxedCommands: false`), so commands are auto-approved but can only write inside the cwd. Network is allowed.
+  - Anything outside that is denied (there is no approvals UI yet). `AGENT_CANVAS_PERMISSION_MODE` and `AGENT_CANVAS_SANDBOX=0` override it.
 
 ## 2. Tools: primitives that update in place
 
@@ -145,11 +145,11 @@ Saves are debounced and atomic (write then rename) and flushed on quit. Electron
 
 ## 8. Open questions and next steps
 
+**Decided:** restoring a canvas version does not rewind the conversation; undo covers the canvas and chrome only.
+
 **Open questions**
-1. **Restore vs rewind.** Should restoring a canvas version also rewind the conversation? For now they are independent: undo moves the canvas and chrome, and the Claude transcript is untouched. Rewinding would need SDK support for forking at a message.
-2. **Export format for sharing.** The likely shape is a single HTML file with inlined resources, vendored libs, a data snapshot and a stub `canvas` API (data persisted to `localStorage`, `emit` a no-op). An MCP App (`text/html;profile=mcp-app`) is another candidate.
-3. **Permission posture.** Is read-only plus canvas the right default, or should sessions get edit/shell with an approvals UI?
-4. **Canvas-initiated turns.** Should `canvas.emit(…, {wake: true})` start a turn, rate-limited?
+1. **Export format for sharing.** The likely shape is a single HTML file with inlined resources, vendored libs, a data snapshot and a stub `canvas` API (data persisted to `localStorage`, `emit` a no-op). An MCP App (`text/html;profile=mcp-app`) is another candidate.
+2. **Canvas-initiated turns.** Should `canvas.emit(…, {wake: true})` start a turn, rate-limited?
 
 **Next steps**, roughly in order:
 1. An approvals UI for non-preapproved tools.

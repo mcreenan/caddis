@@ -28,7 +28,8 @@ TARGET=web BASE=http://192.168.86.73:5317 npm run e2e    # same E2E against `npm
 | `AGENT_CANVAS_DATA_DIR` | Session storage. Defaults to Electron `userData/data`, or `./data` for web |
 | `AGENT_CANVAS_DEFAULT_CWD` | Default working directory (`$HOME`) |
 | `AGENT_CANVAS_CLAUDE_EXECUTABLE` | Path to `claude`. Defaults to `PATH` |
-| `AGENT_CANVAS_PERMISSION_MODE` | SDK permission mode (`dontAsk`) |
+| `AGENT_CANVAS_PERMISSION_MODE` | SDK permission mode (`acceptEdits`: edits and sandboxed commands in the working directory are allowed) |
+| `AGENT_CANVAS_SANDBOX` | `0` disables the Bash sandbox (commands then need pre-approval) |
 | `AGENT_CANVAS_SESSION` or `--session=<id>` | Reopen a session in Electron |
 | `HOST`, `PORT` | Web listener (`0.0.0.0`, `5317`) |
 

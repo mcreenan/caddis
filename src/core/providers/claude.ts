@@ -13,7 +13,7 @@ import type { AgentProvider, AgentRun, ProviderContext } from "./types";
  */
 
 /** Built-in tools that run without prompting; anything else follows the user's settings or is denied (no approval UI yet). */
-const PREAPPROVED = ["Read", "Glob", "Grep", "WebFetch", "WebSearch"];
+const PREAPPROVED = ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "TodoWrite"];
 
 export function resolveClaudeExecutable(): string | undefined {
   const override = process.env.AGENT_CANVAS_CLAUDE_EXECUTABLE;
@@ -111,7 +111,15 @@ export class ClaudeProvider implements AgentProvider {
         includePartialMessages: true,
         mcpServers: { [MCP_SERVER_NAME]: createCanvasMcpServer(ctx.tools) },
         allowedTools: [...PREAPPROVED, ...canvasTools],
-        permissionMode: (process.env.AGENT_CANVAS_PERMISSION_MODE as Options["permissionMode"]) ?? "dontAsk",
+        // Edits are auto-accepted in the working directory. Bash runs in Claude Code's sandbox
+        // (writes confined to cwd, network allowed) and is auto-approved there.
+        permissionMode: (process.env.AGENT_CANVAS_PERMISSION_MODE as Options["permissionMode"]) ?? "acceptEdits",
+        sandbox: {
+          enabled: process.env.AGENT_CANVAS_SANDBOX !== "0",
+          autoAllowBashIfSandboxed: true,
+          allowUnsandboxedCommands: false,
+          network: { allowedDomains: ["*"], allowLocalBinding: true },
+        },
       },
     });
 
