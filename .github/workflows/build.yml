@@ -67,4 +67,4 @@ jobs:
             --prerelease \
             --latest=false \
             --title "Nightly ($VERSION)" \
-            --notes "Built from $GITHUB_SHA on main. Replaced on every merge; use the latest stable release unless you need something unreleased. The macOS build is unsigned."
+            --notes "Built from $GITHUB_SHA on main. Replaced on every merge; use the latest stable release unless you need something unreleased. The macOS build is not notarized; see the README to open it."

@@ -40,9 +40,8 @@ jobs:
           node-version-file: .node-version
           cache: true
       - run: npm run dist:${{ matrix.target }} -- -c.extraMetadata.version=${{ inputs.version }}
-        env:
-          # The mac build is unsigned until a Developer ID certificate is configured.
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - if: matrix.target == 'mac'
+        run: codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Caddis.app
       - uses: actions/upload-artifact@v7
         with:
           name: caddis-${{ matrix.target }}-${{ inputs.version }}

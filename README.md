@@ -4,10 +4,28 @@ Caddis is a desktop app where each window is one Claude session, and the window 
 
 ## Requirements
 
-- Node 24 or newer.
 - [Claude Code](https://claude.com/claude-code), installed and logged in. A Pro or Max subscription works (`claude login`), and no API key is needed. On a machine without an interactive login, set `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
+- Node 24 or newer, only if you run from source.
 
 ## Install and run
+
+### Download an installer
+
+The quickest way to start. Get one from the [latest stable release](https://github.com/mcreenan/caddis/releases/latest), or from the [nightly release](https://github.com/mcreenan/caddis/releases/tag/nightly), which is rebuilt from `main` after every merge.
+
+| System                | File                 | Install                                   |
+| --------------------- | -------------------- | ----------------------------------------- |
+| macOS (Apple silicon) | `Caddis-*-arm64.dmg` | Open it and drag Caddis to Applications   |
+| Debian, Ubuntu        | `caddis_*_amd64.deb` | `sudo apt install ./caddis_*_amd64.deb`   |
+| Other Linux (x64)     | `Caddis-*.AppImage`  | `chmod +x Caddis-*.AppImage`, then run it |
+
+The macOS app isn't notarized yet, so macOS blocks it the first time and may report that it's damaged. After moving it to Applications, clear the download flag once:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Caddis.app
+```
+
+### Run from source
 
 ```sh
 git clone https://github.com/mcreenan/caddis.git
@@ -122,7 +140,7 @@ A pre-push hook runs `vp check` and `vp test`.
 
 ### Releases
 
-Installers are Linux (AppImage, deb) and macOS (dmg, unsigned, Apple silicon), published on [GitHub Releases](https://github.com/mcreenan/caddis/releases):
+Installers are Linux (AppImage, deb) and macOS (dmg, ad-hoc signed but not notarized, Apple silicon), published on [GitHub Releases](https://github.com/mcreenan/caddis/releases):
 
 - **Nightly**: every merge to `main` replaces the `nightly` prerelease, versioned as the next patch (e.g. `0.2.1-nightly.42`).
 - **Stable**: run the **Release** workflow (Actions → Release → Run workflow, or `gh workflow run release.yml -f bump=minor`). It checks `main`, bumps the version, tags `vX.Y.Z`, builds the installers and publishes the release with generated notes.

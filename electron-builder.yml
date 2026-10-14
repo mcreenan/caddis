@@ -38,8 +38,10 @@ linux:
 mac:
   target: [dmg]
   category: public.app-category.developer-tools
-  # Unsigned until a Developer ID certificate is set up.
-  identity: null
+  # Ad-hoc signed until a Developer ID certificate is set up: Apple silicon won't run unsigned code, and an
+  # ad-hoc signature needs the hardened runtime off. Gatekeeper still flags the download (see README).
+  identity: "-"
+  hardenedRuntime: false
 dmg:
   writeUpdateInfo: false
 publish: null
