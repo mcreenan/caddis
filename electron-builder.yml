@@ -14,6 +14,16 @@ files:
   - src/canvas/**
   # Caddis drives the user's installed `claude` CLI, so skip the SDK's ~250 MB bundled binary.
   - "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**"
+  # Not loaded at runtime: TypeScript sources, typings, source maps, the SDK's browser build.
+  - "!**/node_modules/three/src/**"
+  - "!**/node_modules/zod/src/**"
+  - "!**/node_modules/@anthropic-ai/claude-agent-sdk/browser-sdk.js"
+  - "!**/*.{map,d.ts,d.cts,d.mts}"
+# Keeps three/examples (the canvas's `three/addons/...`), which electron-builder skips by default.
+onNodeModuleFile: ./scripts/builder-hooks.mjs
+# Chromium's UI strings; the app's own UI is English-only.
+electronLanguages: [en-US]
+compression: maximum
 fileAssociations:
   - ext: caddis
     name: Caddis artifact
