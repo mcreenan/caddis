@@ -1,69 +1,62 @@
 # Caddis
 
-Each window is one Claude session. The window itself is a live canvas the agent builds while you talk to it. The prompt and history float above the canvas: the agent can restyle them within limits, but it can't remove them.
-
-Design: [docs/PLAN.md](docs/PLAN.md). Wire protocol and tools: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+Caddis is a desktop app where each window is one Claude session, and the window itself is the canvas. Describe what you want and Claude builds it live: a page, a 2D drawing surface or a 3D scene. You keep chatting to change it.
 
 ## Requirements
 
-- Node 24+.
-- The `claude` CLI, logged in. A Pro/Max subscription works: run `claude login`, or set `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
-- No API key is needed, and the app never sets `ANTHROPIC_API_KEY`.
+- Node 24 or newer.
+- [Claude Code](https://claude.com/claude-code), installed and logged in. A Pro or Max subscription works (`claude login`), and no API key is needed. On a machine without an interactive login, set `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
 
-## Run
+## Install and run
 
 ```sh
+git clone https://github.com/mcreenan/caddis.git
+cd caddis
 npm install
-npm start            # Electron: build, then open a window (Ctrl/Cmd+N opens another)
-npm run dev          # Electron with renderer HMR
-npm run web          # secondary target: build, then serve on http://0.0.0.0:5317
-npm run serve        # serve an existing build
-npm run typecheck
-npm run e2e                                              # Electron E2E (real Claude turns)
-TARGET=web BASE=http://192.168.86.73:5317 npm run e2e    # same E2E against `npm run serve`
+npm start
 ```
 
-| Variable | Purpose |
-|---|---|
-| `CADDIS_DATA_DIR` | Session storage. Defaults to Electron `userData/data`, or `./data` for web |
-| `CADDIS_DEFAULT_CWD` | Default working directory (`$HOME`) |
-| `CADDIS_CLAUDE_EXECUTABLE` | Path to `claude`. Defaults to `PATH` |
-| `CADDIS_PERMISSION_MODE` | SDK permission mode (`acceptEdits`: edits and sandboxed commands in the working directory are allowed) |
-| `CADDIS_SANDBOX` | `0` disables the Bash sandbox (commands then need pre-approval) |
-| `CADDIS_SESSION` or `--session=<id>` | Reopen a session in Electron |
-| `HOST`, `PORT` | Web listener (`0.0.0.0`, `5317`) |
-
-On Linux, `scripts/with-display.mjs` makes Electron use Wayland when `WAYLAND_DISPLAY` is set but `XDG_SESSION_TYPE` isn't, which is common for shells started outside the login session.
-
-The web target has **no authentication**. Use it only on networks you trust, such as your LAN or tailnet.
+Ctrl/Cmd+N opens another window, which is a new session.
 
 ## Using it
 
-1. Describe what the window should become. Pick a model and effort (both reported by your Claude login) and a working directory.
-2. The agent builds the canvas with tools that update it **in place**:
-   - CSS swaps, and HTML morphs.
-   - JS modules re-run with their `ctx.state` kept.
-   - Every write reports the errors it caused.
-3. Pages can share state with the agent: `canvas.data.get/set/subscribe` and `canvas.emit`. Your interactions are attached to your next message.
-4. The agent (or the page) can move and restyle the prompt and history with `chrome_set`. Values are clamped, and the clamps are reported back.
-5. The stats chip in the history shows fps or a ⚠ count when the watchdog sees leaks or an fps collapse.
-6. **Escape hatch:** Ctrl/Cmd+Shift+Esc, or the ⎋ button in the bottom-left corner, opens safe mode. It offers labelled undo/redo (covering canvas and chrome), reset chrome, hide/reload/clear canvas, a new window, and an unstyled history and prompt.
+1. **Start a session.** Type what the window should become, then pick a model, effort level and working directory. Models and effort levels come from your Claude login.
+2. **Watch it build.** Changes are applied in place without reloading, so 3D scenes keep their camera and animation state as Claude edits them.
+3. **Keep talking.** After the first message the prompt shrinks to a single line, and the history panel shows Claude's replies and tool calls. Click `–` to collapse the history to a small dot that pulses while Claude is working.
+4. **Interact with the canvas.** Pages Claude builds can store data and send events that Claude sees with your next message. For example, tick off a task on the page, then ask Claude about it.
+5. **Let it restyle the controls.** Claude can move and restyle the prompt and history panel, within limits that keep them visible and usable.
+6. **Undo or escape.** Press Ctrl/Cmd+Shift+Esc, or click the ⎋ button in the bottom-left corner, to open safe mode. It shows plain, unstyled controls with:
+   - undo and redo for the canvas and the controls
+   - reset controls
+   - hide, reload or clear the canvas
+   - new window
 
-## Layout
+Sessions are saved automatically. Reopening one restores its canvas, data and controls.
 
-```
-src/shared/      protocol.ts (v2 messages and types), chrome.ts (base, limits, clamping, layout)
-src/core/        session core shared by Electron main and the web server
-  manager.ts     providers, sessions, per-client message handling
-  session.ts     canvas/data/chrome state, undo, frame requests, persistence
-  tools.ts       the MCP tools (in-process SDK MCP server "canvas")
-  providers/     AgentProvider interface + Claude (Agent SDK on the claude CLI)
-  static.ts      serves the frame shell + vendored three/d3/idiomorph
-  dom.ts         persisted DOM ops on index.html (linkedom)
-src/main/        Electron main: windows, IPC, canvas:// protocol, capturePage, process stats
-src/preload/     contextBridge API (window.caddis)
-src/renderer/    React UI: start card, chrome, history, safe mode, iframe host
-src/canvas/      frame.html + runtime.js (apply-in-place, module lifecycle, data, stats, watchdog)
-src/server/      web target: HTTP + WebSocket on 0.0.0.0:5317
-scripts/e2e.ts   end-to-end test (Electron or web) with real Claude turns
+### What Claude can do
+
+In its working directory, Claude can read and edit files and run shell commands without asking. Commands run in Claude Code's sandbox, which allows writes only inside the working directory and allows network access. Canvas pages are sandboxed from the app but can reach the network.
+
+### Use it from another device
+
+`npm run web` serves Caddis at `http://<this-machine>:5317` for browsers on your LAN or tailnet. It has **no authentication**, and Claude can run commands on this machine, so use it only on networks you trust.
+
+### Settings
+
+| Variable | Purpose |
+|---|---|
+| `CADDIS_DEFAULT_CWD` | Default working directory (`$HOME`) |
+| `CADDIS_DATA_DIR` | Where sessions are stored |
+| `CADDIS_CLAUDE_EXECUTABLE` | Path to `claude`, if it isn't on `PATH` |
+| `CADDIS_PERMISSION_MODE` | Claude permission mode (default `acceptEdits`) |
+| `CADDIS_SANDBOX` | `0` turns off the command sandbox; commands then need pre-approval |
+| `CADDIS_SESSION` or `--session=<id>` | Reopen a specific session |
+| `HOST`, `PORT` | Web server address (`0.0.0.0`, `5317`) |
+
+## Development
+
+```sh
+npm run dev         # Electron with hot reload
+npm run typecheck
+npm run e2e         # end-to-end test with real Claude turns (TARGET=web for the web build)
 ```
