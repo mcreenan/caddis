@@ -118,4 +118,4 @@ npm run dist        # installer for this OS in dist/ (also dist:linux, dist:mac)
 | `src/shared`   | Types shared across processes                                  |
 | `e2e`          | End-to-end test                                                |
 
-A pre-push hook runs `vp check` and `vp test`. On every push to `main`, GitHub Actions builds Linux (AppImage, deb) and macOS (dmg, zip, unsigned, Apple silicon) installers and attaches them to the run as artifacts.
+A pre-push hook runs `vp check` and `vp test`. On every push to `main`, GitHub Actions builds Linux (AppImage, deb) and macOS (dmg, unsigned, Apple silicon) installers and attaches them to the run as artifacts.

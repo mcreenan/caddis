@@ -40,9 +40,7 @@ jobs:
               dist/*.deb
           - os: macos-latest
             target: mac
-            artifacts: |
-              dist/*.dmg
-              dist/*.zip
+            artifacts: dist/*.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
