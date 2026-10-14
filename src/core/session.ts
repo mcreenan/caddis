@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { CHROME_BASE, CHROME_LIMITS, effectiveProps, layoutChrome, normaliseChromeProps } from "../shared/chrome";
 import {
   CANVAS_MODES,
   RESOURCE_NAME_RE,
+  TITLE_MAX,
   emptyCanvas,
   emptyChrome,
   resourceKind,
@@ -26,6 +28,7 @@ import {
   type ServerMsg,
   type SessionConfig,
   type SessionSnapshot,
+  type SessionTitle,
   type UndoInfo,
 } from "../shared/protocol";
 import { artifactFilename, buildArtifact, installTranscript, restoreWorkspace, sessionTitle, type ParsedArtifact } from "./artifact";
@@ -81,6 +84,7 @@ export interface Persisted {
   agentCursor: number;
   /** Where File → Save writes (Electron), once the session has been saved or opened from a file. */
   artifactPath?: string;
+  title?: SessionTitle;
   /** Opened from an artifact: the next run forks the imported Claude session instead of appending to it. */
   forkOnResume?: boolean;
 }
@@ -102,6 +106,12 @@ const preview = (v: unknown, n = 160) => {
   const s = JSON.stringify(v) ?? "undefined";
   return s.length > n ? `${s.slice(0, n)}…` : s;
 };
+
+function cleanTitle(t: unknown): SessionTitle | undefined {
+  const v = t as Partial<SessionTitle> | undefined;
+  if (typeof v?.text !== "string" || !v.text.trim()) return undefined;
+  return { text: v.text.trim().slice(0, TITLE_MAX), by: v.by === "user" ? "user" : "agent" };
+}
 
 export class Session {
   readonly clients = new Set<Client>();
@@ -208,6 +218,7 @@ export class Session {
         eventSeq: a.activity.eventSeq,
         agentCursor: a.activity.agentCursor,
         artifactPath: source.path,
+        title: cleanTitle(a.manifest.session?.title),
         forkOnResume: Boolean(providerSessionId),
       },
       path.join(dir, `${id}.json`),
@@ -222,7 +233,22 @@ export class Session {
   }
 
   get title() {
-    return sessionTitle(this.d.history);
+    return sessionTitle(this.d);
+  }
+
+  /** Name the session. The agent can't replace a title the user chose; an empty user title clears it. */
+  setTitle(text: string, by: SessionTitle["by"]): string {
+    const t = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, TITLE_MAX);
+    if (by === "agent") {
+      if (this.d.title?.by === "user") return `Not changed: the user named this canvas "${this.d.title.text}".`;
+      if (!t) throw new Error("title is empty");
+    }
+    this.d.title = t ? { text: t, by } : undefined;
+    this.save();
+    this.broadcast({ t: "title", title: this.d.title });
+    if (!t) return "Title cleared.";
+    const file = this.d.artifactPath && path.basename(this.d.artifactPath);
+    return file ? `Title set to "${t}". The titlebar keeps showing the file name ${file} while the session is saved to it.` : `Title set to "${t}".`;
   }
 
   get artifactPath() {
@@ -287,6 +313,7 @@ export class Session {
       undo: this.undoInfo(),
       stats: this.stats,
       file: this.d.artifactPath ? path.basename(this.d.artifactPath) : undefined,
+      title: this.d.title,
     };
   }
 
@@ -314,6 +341,9 @@ export class Session {
     this.addItem({ id: randomUUID(), ts: Date.now(), kind: "user", text, attached: attached?.label });
     this.setStatus("thinking");
     if (!this.run) {
+      // A temporary working directory may have been cleared (e.g. by a reboot) since the session was made.
+      const { cwd } = this.d.config;
+      if (!existsSync(cwd) && path.dirname(cwd) === os.tmpdir()) mkdirSync(cwd, { recursive: true });
       this.run = this.provider.start({
         config: this.d.config,
         systemPrompt: canvasSystemPrompt(this.d.config.cwd),

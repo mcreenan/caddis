@@ -20,20 +20,20 @@ Ctrl/Cmd+N opens another window, which is a new session. You can also open a sav
 
 ## Using it
 
-1. **Start a session.** Type what the window should become, then pick a model, effort level and working directory. Models and effort levels come from your Claude login.
+1. **Start a session.** Type what the window should become. Below the prompt you can change the model, effort level and working directory. Models and effort levels come from your Claude login and start on its defaults. Unless you pick a folder, each session gets a new temporary directory.
 2. **Watch it build.** Changes are applied in place without reloading, so 3D scenes keep their camera and animation state as Claude edits them.
 3. **Keep talking.** After the first message the prompt shrinks to a single line, and the history panel shows Claude's replies and tool calls. The titlebar's history button collapses it to a small dot that pulses while Claude is working; click the dot or the button again to expand it.
 4. **Interact with the canvas.** Pages Claude builds can store data and send events that Claude sees with your next message. For example, tick off a task on the page, then ask Claude about it.
 5. **Let it restyle the controls.** Claude can move and restyle the prompt and history panel, within limits that keep them visible and usable.
 6. **Use the titlebar.** Caddis draws its own titlebar and keeps your system's window buttons. Claude can't restyle or cover it. From left to right, it has:
    - the menu button (Windows, Linux and the web; on macOS these items are in the system menu bar):
-     - **File**: new window, open, save and save as
+     - **File**: new window, open, save, save as and rename
      - **Canvas**: undo, redo, reload or clear the canvas
      - **View**: show or hide the overlay, expand or minimise the history, reset the overlay's style
    - undo and redo for the canvas and the controls
    - a button that hides or shows the prompt and history (`Ctrl/Cmd+\`)
    - a button that switches the history between its normal and minimised size
-   - the session's title
+   - the session's title. Claude names the session once it knows what it's building; until then the title is the first line of your first message. If the session is saved to or opened from a file, the file name is shown instead. Double-click the title (or use **File → Rename…**) to name it yourself. Claude never changes a title you set. Clear it to go back to the automatic title
    - a status readout:
      - Claude's status
      - frame rate (3D canvases)
@@ -69,7 +69,7 @@ A `.caddis` file is a zip archive you can inspect with any unzip tool:
 | `preview.png` | A screenshot of the window when it was saved |
 
 When you open a file:
-- The session keeps its original working directory if that folder exists on this machine. Otherwise it uses the default directory.
+- The session keeps its original working directory if that folder exists on this machine. Otherwise it uses `CADDIS_DEFAULT_CWD` or a new temporary directory.
 - Workspace files are written back only into the original folder, and only when they're missing. Existing files are never overwritten.
 - Claude continues from a copy of the saved conversation, so the original session is left unchanged.
 - The archive is checked against its manifest, and a file that doesn't match is rejected.
@@ -86,7 +86,7 @@ In its working directory, Claude can read and edit files and run shell commands 
 
 | Variable | Purpose |
 |---|---|
-| `CADDIS_DEFAULT_CWD` | Default working directory (`$HOME`) |
+| `CADDIS_DEFAULT_CWD` | Default working directory (a new temporary directory for each session) |
 | `CADDIS_DATA_DIR` | Where sessions are stored |
 | `CADDIS_CLAUDE_EXECUTABLE` | Path to `claude`, if it isn't on `PATH` |
 | `CADDIS_PERMISSION_MODE` | Claude permission mode (default `acceptEdits`) |

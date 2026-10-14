@@ -1,6 +1,6 @@
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { ANCHORS, CANVAS_MODES, CHROME_COMPONENTS, DOM_OPS, FONTS, SHADOWS } from "../shared/protocol";
+import { ANCHORS, CANVAS_MODES, CHROME_COMPONENTS, DOM_OPS, FONTS, SHADOWS, TITLE_MAX } from "../shared/protocol";
 import type { Session } from "./session";
 
 export const MCP_SERVER_NAME = "canvas";
@@ -90,6 +90,11 @@ const DEFS: ToolDef[] = [
     description: "What the user sees: errors and console since your last view, a compact DOM outline, runtime stats, and optionally a screenshot.",
     shape: { screenshot: z.boolean().optional(), outline: z.boolean().optional(), selector: z.string().optional(), maxWidth: z.number().optional() },
   },
+  {
+    name: "canvas_set_title",
+    description: `Name the canvas: a short title (max ${TITLE_MAX} chars) for the titlebar, window and saved file. Set it once you know what you're building; change it only if the canvas becomes something else. A title the user chose is kept.`,
+    shape: { title: z.string() },
+  },
   { name: "canvas_stats", description: "Runtime stats: fps, frame time, heap, three.js renderer.info, WebGL contexts, live timers/listeners/rAF, leak warnings.", shape: {} },
   { name: "canvas_reload", description: "Fallback only: rebuild the page from resources (loses runtime state).", shape: {} },
   { name: "data_get", description: "Get a value from the session data store shared with the page.", shape: { key: z.string() } },
@@ -153,6 +158,8 @@ export function buildToolSet(s: Session): ToolSet {
           }
           case "canvas_view":
             return await s.view({ screenshot: Boolean(a.screenshot), outline: a.outline !== false, selector: a.selector, maxWidth: a.maxWidth ?? 1024 });
+          case "canvas_set_title":
+            return text(s.setTitle(a.title, "agent"));
           case "canvas_stats":
             return text(await s.statsReport());
           case "canvas_reload":

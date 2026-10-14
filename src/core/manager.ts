@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PROTOCOL_VERSION, type ClientMsg, type ProviderInfo, type SessionConfig } from "../shared/protocol";
@@ -15,10 +15,12 @@ export class SessionManager {
   readonly providers: Record<string, AgentProvider> = { claude: new ClaudeProvider() };
   readonly store: SessionStore;
   private discovery?: Promise<ProviderInfo[]>;
+  private readonly clients = new Set<Client>();
 
   constructor(
     dataDir: string,
-    readonly defaultCwd = process.env.CADDIS_DEFAULT_CWD ?? os.homedir(),
+    /** Empty: each new session gets its own temporary directory. */
+    readonly defaultCwd = process.env.CADDIS_DEFAULT_CWD ?? "",
     readonly platform: "web" | "electron" = "web",
   ) {
     this.store = new SessionStore(path.join(dataDir, "sessions"), (c) => this.providers[c.provider] ?? this.providers.claude);
@@ -27,8 +29,13 @@ export class SessionManager {
   /** Ask each provider's host for availability, auth and models (cached; retried after a failure). */
   discover(): Promise<ProviderInfo[]> {
     if (!this.discovery) {
-      this.discovery = Promise.all(Object.values(this.providers).map((p) => p.discover()));
-      this.discovery.then((list) => {
+      const updated = () =>
+        discovery.then((providers) => {
+          for (const c of this.clients) c.send({ t: "providers", providers });
+        });
+      const discovery = Promise.all(Object.values(this.providers).map((p) => p.discover(updated)));
+      this.discovery = discovery;
+      discovery.then((list) => {
         if (list.some((p) => !p.enabled)) setTimeout(() => (this.discovery = undefined), 30_000);
       });
     }
@@ -38,11 +45,16 @@ export class SessionManager {
   private validateConfig(c: SessionConfig, providers: ProviderInfo[]): SessionConfig {
     const info = providers.find((p) => p.id === c?.provider);
     if (!info?.enabled) throw new Error(`provider ${c?.provider} is not available${info?.note ? `: ${info.note}` : ""}`);
-    const cwd = path.resolve(c.cwd?.trim().replace(/^~(?=$|\/)/, os.homedir()) || this.defaultCwd);
-    if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new Error(`working directory does not exist: ${cwd}`);
     const model = String(c.model ?? "");
     if (model && info.models.length && !info.models.some((m) => m.id === model)) throw new Error(`unknown model ${model}`);
+    const dir = c.cwd?.trim() || this.defaultCwd;
+    const cwd = dir ? path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir())) : this.tempCwd();
+    if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new Error(`working directory does not exist: ${cwd}`);
     return { provider: info.id, model, effort: (c.effort ?? "") as SessionConfig["effort"], cwd };
+  }
+
+  private tempCwd() {
+    return mkdtempSync(path.join(os.tmpdir(), "caddis-"));
   }
 
   /**
@@ -52,7 +64,7 @@ export class SessionManager {
   async importArtifact(buf: Buffer, source?: ArtifactSource): Promise<Session> {
     const a = parseArtifact(buf);
     const orig = a.manifest.session?.config;
-    const cwd = typeof orig?.cwd === "string" && existsSync(orig.cwd) && statSync(orig.cwd).isDirectory() ? orig.cwd : this.defaultCwd;
+    const cwd = typeof orig?.cwd === "string" && existsSync(orig.cwd) && statSync(orig.cwd).isDirectory() ? orig.cwd : this.defaultCwd || this.tempCwd();
     const providers = await this.discover();
     const info = providers.find((p) => p.id === orig?.provider);
     const model = info?.models.some((m) => m.id === orig?.model) ? String(orig?.model) : "";
@@ -64,6 +76,7 @@ export class SessionManager {
   connect(client: Client) {
     let session: Session | undefined;
     const fail = (message: string) => client.send({ t: "error", message });
+    this.clients.add(client);
 
     this.discover().then((providers) =>
       client.send({ t: "welcome", v: PROTOCOL_VERSION, providers, defaultCwd: this.defaultCwd, platform: this.platform }),
@@ -145,6 +158,8 @@ export class SessionManager {
           return s.clearCanvas();
         case "canvas.reload":
           return void s.reload();
+        case "title.set":
+          return void s.setTitle(msg.title, "user");
         case "artifact.export": {
           const { buffer } = await s.exportArtifact();
           return client.send({ t: "artifact.file", name: s.artifactName, data: buffer.toString("base64") });
@@ -155,7 +170,10 @@ export class SessionManager {
     return {
       receive: (msg: ClientMsg) =>
         handle(msg).catch((e: any) => fail(e?.message ?? String(e))),
-      close: () => session?.detach(client),
+      close: () => {
+        this.clients.delete(client);
+        session?.detach(client);
+      },
       get session() {
         return session;
       },

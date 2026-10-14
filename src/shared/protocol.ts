@@ -169,6 +169,8 @@ export interface ModelInfo {
   id: string;
   label: string;
   efforts: Effort[];
+  /** The effort the CLI uses for this model when none is chosen; filled in after discovery. */
+  defaultEffort?: Effort;
   description?: string;
 }
 
@@ -180,6 +182,8 @@ export interface ProviderInfo {
   auth?: string;
   note?: string;
   models: ModelInfo[];
+  /** Id of the model the CLI uses when none is chosen. */
+  defaultModel?: string;
 }
 
 export interface SessionConfig {
@@ -207,6 +211,14 @@ export interface UndoInfo {
   next?: string;
 }
 
+/** A name for the session. A user-chosen title is never replaced by the agent. */
+export interface SessionTitle {
+  text: string;
+  by: "agent" | "user";
+}
+
+export const TITLE_MAX = 60;
+
 export interface SessionSnapshot {
   id: string;
   config: SessionConfig;
@@ -220,6 +232,7 @@ export interface SessionSnapshot {
   stats?: CanvasStats;
   /** File name of the `.caddis` artifact this session was last saved to or opened from. */
   file?: string;
+  title?: SessionTitle;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,13 +275,18 @@ export type ClientMsg =
   | { t: "redo" }
   | { t: "canvas.clear" }
   | { t: "canvas.reload" }
+  /** Rename the session; an empty title goes back to the automatic one. */
+  | { t: "title.set"; title: string }
   // artifacts (web; Electron main reads and writes files itself)
   | { t: "artifact.export" }
   /** A `.caddis` file as base64. Opens as a new session; the reply is `artifact.opened`. */
   | { t: "artifact.import"; data: string; name?: string };
 
 export type ServerMsg =
+  /** `defaultCwd` is empty when each new session gets its own temporary directory. */
   | { t: "welcome"; v: number; providers: ProviderInfo[]; defaultCwd: string; platform: "web" | "electron" }
+  /** Provider info changed after `welcome` (e.g. per-model default efforts arrived). */
+  | { t: "providers"; providers: ProviderInfo[] }
   | { t: "session.snapshot"; session: SessionSnapshot }
   | { t: "session.none"; sessionId?: string }
   | { t: "history.append"; item: HistoryItem }
@@ -285,6 +303,7 @@ export type ServerMsg =
   | { t: "frame.chrome.result"; requestId: string; result: ChromeApplyResult | { error: string } }
   | { t: "chrome.state"; chrome: ChromeState }
   | { t: "undo.state"; undo: UndoInfo }
+  | { t: "title"; title?: SessionTitle }
   | { t: "stats"; stats: CanvasStats }
   /** Reply to `artifact.export`: a `.caddis` file (base64) to download. */
   | { t: "artifact.file"; name: string; data: string }
@@ -305,7 +324,7 @@ export type ToFrameMsg =
   | { type: "chrome.result"; id: string; result: unknown };
 
 /** Titlebar/menu actions. Electron main sends them to the focused window for native menu items and shortcuts. */
-export type UiCommand = "overlay" | "history" | "resetOverlay" | "undo" | "redo" | "reloadCanvas" | "clearCanvas";
+export type UiCommand = "overlay" | "history" | "resetOverlay" | "undo" | "redo" | "reloadCanvas" | "clearCanvas" | "rename";
 
 export type FromFrameMsg =
   | { type: "hello" }

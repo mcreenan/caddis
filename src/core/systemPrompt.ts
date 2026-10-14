@@ -14,4 +14,6 @@ Data: data_get/data_set/data_append/... share a JSON store with the page (ctx.da
 
 Chrome: the floating prompt and history panel are always present, and you may restyle them: chrome_get, chrome_set(component: "prompt"|"history", props: anchor, x, y, width, height, opacity, accent, background, foreground, blur, radius, font, fontSize, shadow, mode full|mini), chrome_reset. Values are clamped and echoed back. Keep important content clear of them.
 
+Title: once you know what the canvas is, name it with canvas_set_title (a few words, e.g. "Solar system"). Rename it only if it becomes something else.
+
 Be brief in chat. Working directory: ${cwd}`;

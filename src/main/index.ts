@@ -224,6 +224,7 @@ function buildMenu() {
           { type: "separator" },
           { label: "Save", accelerator: "CmdOrCtrl+S", click: () => fileCommand("save") },
           { label: "Save As…", accelerator: "CmdOrCtrl+Shift+S", click: () => fileCommand("saveAs") },
+          { label: "Rename…", click: ui("rename") },
           { type: "separator" },
           { role: "close" },
           ...(MAC ? [] : [{ role: "quit" as const }]),

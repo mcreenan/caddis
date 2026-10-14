@@ -12,6 +12,7 @@ import {
   type CanvasMode,
   type ChromeState,
   type HistoryItem,
+  type SessionTitle,
   type Resource,
   type SessionConfig,
 } from "../shared/protocol";
@@ -62,7 +63,8 @@ export interface Manifest {
   app: { name: "caddis"; version: string };
   savedAt: number;
   title: string;
-  session: { id: string; createdAt: number; config: SessionConfig; providerSessionId?: string };
+  /** `title` is set when the agent or user named the session; the top-level `title` always has a value. */
+  session: { id: string; createdAt: number; config: SessionConfig; providerSessionId?: string; title?: SessionTitle };
   canvas: { mode: CanvasMode; rev: number };
   summary: { turns: number; userMessages: number; toolCalls: number; costUsd: number; dataKeys: number; resources: number };
   files: ManifestFile[];
@@ -85,8 +87,10 @@ export interface ParsedArtifact {
 const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 const jsonBuf = (v: unknown) => Buffer.from(JSON.stringify(v, null, 1));
 
-export function sessionTitle(history: HistoryItem[]) {
-  const first = history.find((h) => h.kind === "user");
+/** The chosen title, else the first line of the first prompt. */
+export function sessionTitle(d: { history: HistoryItem[]; title?: SessionTitle }) {
+  if (d.title) return d.title.text;
+  const first = d.history.find((h) => h.kind === "user");
   const line = first?.kind === "user" ? first.text.split("\n")[0].trim() : "";
   return (line.length > 60 ? `${line.slice(0, 57)}…` : line) || "Untitled canvas";
 }
@@ -224,8 +228,8 @@ export function buildArtifact(d: Persisted, preview?: Buffer): { buffer: Buffer;
     version: ARTIFACT_VERSION,
     app: { name: "caddis", version: pkg.version },
     savedAt: Date.now(),
-    title: sessionTitle(d.history),
-    session: { id: d.id, createdAt: d.createdAt, config: d.config, providerSessionId: d.providerSessionId },
+    title: sessionTitle(d),
+    session: { id: d.id, createdAt: d.createdAt, config: d.config, providerSessionId: d.providerSessionId, title: d.title },
     canvas: { mode: d.canvas.mode, rev: d.canvas.rev },
     summary: {
       turns: turns.length,

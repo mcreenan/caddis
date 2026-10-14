@@ -10,6 +10,7 @@ import {
   type ProviderInfo,
   type ServerMsg,
   type SessionConfig,
+  type SessionTitle,
   type UndoInfo,
 } from "../shared/protocol";
 
@@ -36,6 +37,9 @@ export interface UiState {
   proc?: CanvasStats["process"];
   /** Artifact file this session was saved to or opened from. */
   file?: string;
+  title?: SessionTitle;
+  /** The titlebar's title is being edited. */
+  renaming: boolean;
   /** Short-lived notice ("Saved x.caddis"). */
   toast?: string;
 }
@@ -46,6 +50,7 @@ export const useUi = create<UiState>(() => ({
   providers: [],
   defaultCwd: "",
   phase: "connecting",
+  renaming: false,
   status: "idle",
   history: [],
   canvas: emptyCanvas(),
@@ -62,6 +67,8 @@ export function reduce(msg: ServerMsg) {
   switch (msg.t) {
     case "welcome":
       return set({ welcomed: true, providers: msg.providers, defaultCwd: msg.defaultCwd });
+    case "providers":
+      return set({ providers: msg.providers });
     case "session.none":
       return set({ phase: "start", sessionId: undefined });
     case "session.snapshot": {
@@ -79,9 +86,12 @@ export function reduce(msg: ServerMsg) {
         undo: s.undo,
         stats: s.stats,
         file: s.file,
+        title: s.title,
         error: undefined,
       });
     }
+    case "title":
+      return set({ title: msg.title });
     case "history.append":
       return set((st) => ({ history: [...st.history, msg.item] }));
     case "history.update":

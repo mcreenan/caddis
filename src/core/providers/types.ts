@@ -31,7 +31,10 @@ export interface AgentRun {
 }
 
 export interface AgentProvider {
-  /** Probe availability, auth and models from the host (cached by the caller). */
-  discover(): Promise<ProviderInfo>;
+  /**
+   * Probe availability, auth and models from the host (cached by the caller).
+   * Slow details may be filled into the returned info later, followed by `onUpdate`.
+   */
+  discover(onUpdate?: () => void): Promise<ProviderInfo>;
   start(ctx: ProviderContext): AgentRun;
 }

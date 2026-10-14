@@ -88,6 +88,7 @@ The import map exposes `three`, `three/addons/…`, `d3`, `idiomorph` and `canva
 | `viewport {width, height}` | Feeds chrome layout, clamps and screenshots |
 | `chrome.set {component, props}` / `chrome.reset {component?}` | User changes (titlebar menu), through the same clamps |
 | `undo` / `redo` / `canvas.clear` / `canvas.reload` | Titlebar and menu actions |
+| `title.set {title}` | The user renames the session. Empty clears it, going back to the automatic title. Not undoable |
 | `artifact.export` | Web: package the session as a `.caddis` file. Answered by `artifact.file` |
 | `artifact.import {data, name?}` | Web: open a `.caddis` file (base64) as a new session. Answered by `artifact.opened` |
 | `frame.*` | Frame reports relayed by the UI. See hop 2 |
@@ -96,8 +97,9 @@ The import map exposes `three`, `three/addons/…`, `d3`, `idiomorph` and `canva
 
 | Message | Meaning |
 |---|---|
-| `welcome {v, providers, defaultCwd, platform}` | `providers[].models` comes from the CLI's `supportedModels()`, and `.auth` from `accountInfo()` |
-| `session.snapshot {session}` | Everything: history, canvas, data, chrome, undo, stats |
+| `welcome {v, providers, defaultCwd, platform}` | `providers[].models` comes from the CLI's `supportedModels()`, and `.auth` from `accountInfo()`. `.defaultModel` is the model the CLI's "default" row resolves to. An empty `defaultCwd` means each session gets a new temporary directory |
+| `providers {providers}` | Sent after `welcome` once each model's `defaultEffort` is known (learned by switching the discovery query through the models) |
+| `session.snapshot {session}` | Everything: history, canvas, data, chrome, undo, stats, and `title {text, by: "agent" \| "user"}` when the session has been named |
 | `history.append {item}` / `history.update {id, patch, appendText?}` | History is streamed |
 | `status {status, detail?}` | `idle`, `thinking`, `tool`, `error`, … |
 | `canvas.mode` / `canvas.resource` / `canvas.delete` / `canvas.state` | Incremental changes, or the full state after undo or clear |
@@ -108,6 +110,7 @@ The import map exposes `three`, `three/addons/…`, `d3`, `idiomorph` and `canva
 | `artifact.file {name, data}` | A `.caddis` file (base64) to download |
 | `artifact.opened {sessionId}` | An artifact was opened as a new session. A window on the start card attaches to it with `hello` |
 | `artifact.saved {name}` | Electron: the session was saved to a file. `session.snapshot` carries the same name as `file` |
+| `title {title?}` | The session was named or its title was cleared |
 | `chrome.state` / `undo.state` / `stats` / `error` | |
 
 Several clients may view one session. The most recently ready one is the **primary** and answers frame requests. All of them receive every broadcast.
@@ -165,6 +168,7 @@ All tools are pre-approved. Each write waits up to 5 s for the frame's `applied`
 | `canvas_view` | `outline?, selector?, screenshot?, maxWidth?` | Errors and console since the last view, the DOM outline, chrome rects, and a PNG (Electron `capturePage`; web: SVG render in the frame) |
 | `canvas_stats` | | Runtime stats, watchdog warnings, and the Electron process |
 | `canvas_reload` | | Full iframe rebuild |
+| `canvas_set_title` | `title` | Max 60 characters. Refused (without error) once the user has named the session. Shown unless the session has a file name; also the saved artifact's title and default file name |
 | `data_get` / `data_set` / `data_delete` / `data_list` | `key`, `value`; `data_list`: `prefix?` | JSON values, 1 MB each |
 | `data_append` | `key, value, max?` | Appends to an array (created if missing), capped |
 | `events_read` | `wait_ms?` | Activity since the agent's cursor. Blocks up to 60 s when `wait_ms > 0` |

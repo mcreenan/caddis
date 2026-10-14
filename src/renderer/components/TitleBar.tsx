@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { HOST_Z } from "../../shared/chrome";
-import type { UiCommand } from "../../shared/protocol";
-import { fileNew, fileOpen, fileSave, historyMini, uiCommand } from "../controller";
+import { TITLE_MAX, type UiCommand } from "../../shared/protocol";
+import { fileNew, fileOpen, fileSave, historyMini, renameSession, uiCommand } from "../controller";
 import { useUi } from "../store";
 import { statusText } from "./History";
 
@@ -34,6 +34,7 @@ function useMenus(): Menu[] {
         "-",
         { label: "Save", key: `${mod}S`, run: () => fileSave(false), disabled: !inSession },
         { label: "Save as…", key: `${mod}⇧S`, run: () => fileSave(true), disabled: !inSession },
+        { label: "Rename…", run: cmd("rename"), disabled: !inSession, testid: "rename" },
       ],
     },
     {
@@ -307,25 +308,76 @@ function Status() {
   );
 }
 
+/** A title the user chose, else the saved file's name, else the agent's title, else the first prompt line. */
 function useTitle() {
   const file = useUi((s) => s.file);
-  const first = useUi((s) => s.history.find((h) => h.kind === "user")?.text.split("\n")[0].slice(0, 60));
-  const title = file ?? first;
+  const chosen = useUi((s) => s.title);
+  const first = useUi((s) => s.history.find((h) => h.kind === "user")?.text.split("\n")[0].slice(0, TITLE_MAX));
+  const title = chosen?.by === "user" ? chosen.text : (file ?? chosen?.text ?? first);
   useEffect(() => {
     document.title = title ? `${title} — Caddis` : "Caddis";
   }, [title]);
   return title;
 }
 
+/** Inline title editor. Enter or blur saves, Escape cancels; an empty title goes back to the automatic one. */
+function RenameInput({ initial, current }: { initial: string; current: string }) {
+  const [draft, setDraft] = useState(initial);
+  const done = (commit: boolean) => {
+    if (!useUi.getState().renaming) return;
+    useUi.setState({ renaming: false });
+    const next = draft.replace(/\s+/g, " ").trim();
+    if (commit && next !== current) renameSession(next);
+  };
+  return (
+    <input
+      className="tb-rename"
+      autoFocus
+      onFocus={(e) => e.target.select()}
+      value={draft}
+      maxLength={TITLE_MAX}
+      placeholder="Automatic title"
+      aria-label="Session title"
+      data-testid="title-input"
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => done(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") done(true);
+        else if (e.key === "Escape") done(false);
+      }}
+    />
+  );
+}
+
+/** The session title; double-click (or File → Rename…) to edit it. */
+function Title() {
+  const title = useTitle();
+  const inSession = useUi((s) => s.phase === "session");
+  const renaming = useUi((s) => s.renaming && s.phase === "session");
+  const chosen = useUi((s) => s.title);
+  const file = useUi((s) => s.file);
+  if (renaming)
+    return (
+      <div className="tb-title">
+        <RenameInput initial={chosen?.text ?? title ?? ""} current={chosen?.text ?? ""} />
+      </div>
+    );
+  const hint = [file && `Saved as ${file}`, chosen?.by === "agent" && `Named by Claude: ${chosen.text}`, inSession && "Double-click to rename"].filter(Boolean).join("\n");
+  return (
+    <div className="tb-title" title={hint || undefined} data-testid="title" onDoubleClick={inSession ? () => useUi.setState({ renaming: true }) : undefined}>
+      <span className={inSession ? "tb-title-text" : undefined}>{title ?? "Caddis"}</span>
+    </div>
+  );
+}
+
 export function TitleBar() {
   const inSession = useUi((s) => s.phase === "session");
-  const title = useTitle();
   const os = window.caddis?.os;
   return (
     <header className={`titlebar${os === "darwin" ? " mac" : os ? " wco" : ""}`} style={{ zIndex: HOST_Z }} data-testid="titlebar">
       {!NATIVE_MENU && <AppMenu />}
       {inSession && <SessionControls />}
-      <div className="tb-title">{title ?? "Caddis"}</div>
+      <Title />
       {inSession && <Status />}
     </header>
   );

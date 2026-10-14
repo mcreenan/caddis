@@ -2,7 +2,7 @@ import { query, type Options, type SDKMessage, type SDKUserMessage } from "@anth
 import { accessSync, constants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Effort, ProviderInfo } from "../../shared/protocol";
+import type { Effort, ModelInfo, ProviderInfo } from "../../shared/protocol";
 import { createCanvasMcpServer, MCP_SERVER_NAME, mcpToolName } from "../tools";
 import type { AgentProvider, AgentRun, ProviderContext } from "./types";
 
@@ -67,31 +67,59 @@ class InputQueue implements AsyncIterable<SDKUserMessage> {
 const never: AsyncIterable<SDKUserMessage> = { [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }) };
 
 export class ClaudeProvider implements AgentProvider {
-  async discover(): Promise<ProviderInfo> {
+  async discover(onUpdate?: () => void): Promise<ProviderInfo> {
     const info: ProviderInfo = { id: "claude", label: "Claude", enabled: false, models: [] };
     const exe = resolveClaudeExecutable();
     if (!exe) return { ...info, note: "claude CLI not found on PATH (set CADDIS_CLAUDE_EXECUTABLE)" };
     // Ask the CLI itself which models and effort levels this login supports.
     const q = query({ prompt: never, options: { ...baseOptions(), cwd: os.homedir() } });
+    // Not in the SDK's typings yet: reports the model and effort the next request would use.
+    const applied = async () => ((await (q as any).getSettings())?.applied ?? {}) as { model?: string; effort?: Effort | null };
+    let keepOpen = false;
     try {
       const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timed out asking the claude CLI for models")), 20000));
-      const [account, models] = await Promise.race([Promise.all([q.accountInfo(), q.supportedModels()]), timeout]);
+      const [account, rows, current] = await Promise.race([Promise.all([q.accountInfo(), q.supportedModels(), applied()]), timeout]);
       const who = account.subscriptionType ? `${account.subscriptionType} subscription` : (account.apiKeySource ?? account.tokenSource ?? account.apiProvider ?? "unknown auth");
-      return {
-        ...info,
-        enabled: true,
-        auth: `${who}${account.email ? ` (${account.email})` : ""}`,
-        models: models.map((m) => ({
-          id: m.value === "default" ? "" : m.value,
-          label: m.displayName,
-          efforts: (m.supportsEffort === false ? [] : (m.supportedEffortLevels ?? [])) as Effort[],
-          description: m.description,
-        })),
-      };
+      const toInfo = (m: (typeof rows)[number]): ModelInfo => ({
+        id: m.value === "default" ? "" : m.value,
+        label: m.displayName,
+        efforts: (m.supportsEffort === false ? [] : (m.supportedEffortLevels ?? [])) as Effort[],
+        description: m.description,
+      });
+      // Offer the model the "default" row resolves to rather than the row itself.
+      const def = rows.find((m) => m.value === "default");
+      const twin = def && rows.find((m) => m !== def && m.resolvedModel && m.resolvedModel === def.resolvedModel);
+      const models = rows.filter((m) => m !== def || !twin).map(toInfo);
+      if (def && !twin) {
+        const own = models.find((m) => m.id === "")!;
+        own.label = def.description.split(" · ")[0] || own.label;
+      }
+      const defaultModel = twin ? twin.value : def ? "" : models[0]?.id;
+      const first = models.find((m) => m.id === defaultModel);
+      if (first && current.effort && first.efforts.includes(current.effort)) first.defaultEffort = current.effort;
+
+      // Each model's own default effort takes a model switch to learn (~0.5s each); fill them in afterwards.
+      keepOpen = true;
+      (async () => {
+        try {
+          for (const m of models) {
+            if (m === first || !m.efforts.length) continue;
+            await q.setModel(m.id || undefined);
+            const e = (await applied()).effort;
+            if (e && m.efforts.includes(e)) m.defaultEffort = e;
+          }
+          onUpdate?.();
+        } catch {
+        } finally {
+          q.close();
+        }
+      })();
+
+      return { ...info, enabled: true, auth: `${who}${account.email ? ` (${account.email})` : ""}`, models, defaultModel };
     } catch (e: any) {
       return { ...info, note: `claude CLI did not respond: ${e?.message ?? e}` };
     } finally {
-      q.close();
+      if (!keepOpen) q.close();
     }
   }
 

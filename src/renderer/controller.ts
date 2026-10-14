@@ -32,6 +32,7 @@ export function uiCommand(cmd: UiCommand) {
     useUi.setState({ overlayHidden: false });
     return setHistoryMode(historyMini() ? "full" : "mini");
   }
+  if (cmd === "rename") return useUi.setState({ renaming: true });
   if (cmd === "undo" || cmd === "redo") return send({ t: cmd });
   if (cmd === "reloadCanvas") return send({ t: "canvas.reload" });
   if (cmd === "clearCanvas") return send({ t: "canvas.clear" });
@@ -42,6 +43,9 @@ const sessionFromUrl = () => new URLSearchParams(location.search).get("s") ?? un
 // ---------------------------------------------------------------- File: new / open / save
 
 export const fileNew = () => transport.newWindow();
+
+/** Rename the session; an empty title goes back to the automatic one. */
+export const renameSession = (title: string) => send({ t: "title.set", title });
 
 export function fileOpen() {
   if (transport.file) return transport.file("open");

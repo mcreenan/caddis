@@ -111,7 +111,9 @@ async function main() {
   const start = page.locator('[data-testid="start"]');
   if (MODEL) await start.locator("select").nth(0).selectOption(MODEL);
   await start.locator("select").nth(1).selectOption(EFFORT).catch(() => log("effort", EFFORT, "not offered"));
+  await start.locator('[data-testid="cwd"]').click();
   await start.locator("input").fill(CWD);
+  await start.locator("input").press("Enter");
   await start.locator("textarea").fill(
     "Make this window a 3D scene with a single spinning cube. Use 3d mode and one module named scene.js. " +
       "Keep the rotation angle in ctx.state.angle (initialise it only if undefined) and advance it in onFrame, so later edits keep the angle. Keep it minimal.",
