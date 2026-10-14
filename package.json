@@ -1,6 +1,6 @@
 {
   "name": "caddis",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "A malleable canvas built live by a coding agent",
   "homepage": "https://github.com/mcreenan/caddis",
