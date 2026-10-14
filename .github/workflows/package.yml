@@ -1,0 +1,50 @@
+name: Package
+
+# Builds the installers for a given ref and version; called by build.yml (nightly) and release.yml (stable).
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        type: string
+        required: true
+      version:
+        description: Version stamped into the app and installer names
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+            artifacts: |
+              dist/*.AppImage
+              dist/*.deb
+          - os: macos-latest
+            target: mac
+            artifacts: dist/*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: voidzero-dev/setup-vp@v1.21.2
+        with:
+          node-version-file: .node-version
+          cache: true
+      - run: npm run dist:${{ matrix.target }} -- -c.extraMetadata.version=${{ inputs.version }}
+        env:
+          # The mac build is unsigned until a Developer ID certificate is configured.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: caddis-${{ matrix.target }}-${{ inputs.version }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error

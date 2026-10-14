@@ -118,4 +118,11 @@ npm run dist        # installer for this OS in dist/ (also dist:linux, dist:mac)
 | `src/shared`   | Types shared across processes                                  |
 | `e2e`          | End-to-end test                                                |
 
-A pre-push hook runs `vp check` and `vp test`. On every push to `main`, GitHub Actions builds Linux (AppImage, deb) and macOS (dmg, unsigned, Apple silicon) installers and attaches them to the run as artifacts.
+A pre-push hook runs `vp check` and `vp test`.
+
+### Releases
+
+Installers are Linux (AppImage, deb) and macOS (dmg, unsigned, Apple silicon), published on [GitHub Releases](https://github.com/mcreenan/caddis/releases):
+
+- **Nightly**: every merge to `main` replaces the `nightly` prerelease, versioned as the next patch (e.g. `0.2.1-nightly.42`).
+- **Stable**: run the **Release** workflow (Actions → Release → Run workflow, or `gh workflow run release.yml -f bump=minor`). It checks `main`, bumps the version, tags `vX.Y.Z`, builds the installers and publishes the release with generated notes.

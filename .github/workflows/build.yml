@@ -1,5 +1,6 @@
 name: Build
 
+# Checks every PR and push; each merge to main also replaces the rolling `nightly` prerelease.
 on:
   pull_request:
   push:
@@ -16,6 +17,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - uses: voidzero-dev/setup-vp@v1.21.2
@@ -24,36 +27,44 @@ jobs:
           cache: true
       - run: vp check
       - run: vp test run
+      # Nightlies are prereleases of the next patch, e.g. 0.2.1-nightly.42 after 0.2.0.
+      - id: version
+        run: |
+          echo "version=$(node -p '
+            const [major, minor, patch] = require("./package.json").version.split(".").map(Number);
+            `${major}.${minor}.${patch + 1}-nightly.${process.env.GITHUB_RUN_NUMBER}`
+          ')" >> "$GITHUB_OUTPUT"
 
-  # Installers are only built for main (on merge) or on demand.
   package:
     needs: check
-    if: github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: linux
-            artifacts: |
-              dist/*.AppImage
-              dist/*.deb
-          - os: macos-latest
-            target: mac
-            artifacts: dist/*.dmg
-    runs-on: ${{ matrix.os }}
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    uses: ./.github/workflows/package.yml
+    with:
+      ref: ${{ github.sha }}
+      version: ${{ needs.check.outputs.version }}
+
+  nightly:
+    needs: [check, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: nightly-release
     steps:
-      - uses: actions/checkout@v7
-      - uses: voidzero-dev/setup-vp@v1.21.2
+      - uses: actions/download-artifact@v8
         with:
-          node-version-file: .node-version
-          cache: true
-      - run: npm run dist:${{ matrix.target }}
+          path: installers
+          merge-multiple: true
+      - name: Replace the nightly release
         env:
-          # The mac build is unsigned until a Developer ID certificate is configured.
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: caddis-${{ matrix.target }}-${{ github.sha }}
-          path: ${{ matrix.artifacts }}
-          if-no-files-found: error
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly installers/* \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --latest=false \
+            --title "Nightly ($VERSION)" \
+            --notes "Built from $GITHUB_SHA on main. Replaced on every merge; use the latest stable release unless you need something unreleased. The macOS build is unsigned."

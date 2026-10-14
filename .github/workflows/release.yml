@@ -1,0 +1,67 @@
+name: Release
+
+# Promotes the current main to a stable release: bumps the version, tags it, builds and publishes the installers.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: voidzero-dev/setup-vp@v1.21.2
+        with:
+          node-version-file: .node-version
+          cache: true
+      - run: vp check
+      - run: vp test run
+      - id: bump
+        name: Bump, commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version "${{ inputs.bump }}" -m "Release v%s"
+          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+      # Checks already ran above, so skip the pre-push hook.
+      - run: git push --no-verify --atomic origin HEAD:main "v${{ steps.bump.outputs.version }}"
+
+  package:
+    needs: tag
+    uses: ./.github/workflows/package.yml
+    with:
+      ref: v${{ needs.tag.outputs.version }}
+      version: ${{ needs.tag.outputs.version }}
+
+  publish:
+    needs: [tag, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.tag.outputs.version }}
+        run: gh release create "$TAG" installers/* --verify-tag --latest --title "Caddis $TAG" --generate-notes
