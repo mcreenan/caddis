@@ -1,5 +1,5 @@
 /**
- * Agent Canvas protocol, version 2.
+ * Caddis protocol, version 2.
  *
  * Three hops:
  *   1. host transport  UI <-> session core  (ClientMsg / ServerMsg)
@@ -12,7 +12,7 @@
  */
 
 export const PROTOCOL_VERSION = 2;
-export const FRAME_CHANNEL = "agent-canvas";
+export const FRAME_CHANNEL = "caddis";
 
 // ---------------------------------------------------------------------------
 // Canvas: a mode plus a set of named resources, all applied live

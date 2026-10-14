@@ -45,7 +45,7 @@ export function startController() {
     },
     () => useUi.setState({ connected: false }),
   );
-  window.agentCanvas?.onUi((cmd) => cmd === "escape" && toggleSafe());
+  window.caddis?.onUi((cmd) => cmd === "escape" && toggleSafe());
   window.addEventListener(
     "keydown",
     (e) => {

@@ -17,7 +17,7 @@ export class SessionManager {
 
   constructor(
     dataDir: string,
-    readonly defaultCwd = process.env.AGENT_CANVAS_DEFAULT_CWD ?? os.homedir(),
+    readonly defaultCwd = process.env.CADDIS_DEFAULT_CWD ?? os.homedir(),
     readonly platform: "web" | "electron" = "web",
   ) {
     this.store = new SessionStore(path.join(dataDir, "sessions"), (c) => this.providers[c.provider] ?? this.providers.claude);

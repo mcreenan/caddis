@@ -1,4 +1,4 @@
-# Agent Canvas protocol (v2)
+# Caddis protocol (v2)
 
 The source of truth is [`src/shared/protocol.ts`](../src/shared/protocol.ts), and the tool schemas are in [`src/core/tools.ts`](../src/core/tools.ts). This file is the prose version.
 
@@ -109,7 +109,7 @@ Several clients may view one session. The most recently ready one is the **prima
 
 ## 3. Hop 2: UI ⇄ canvas frame
 
-Every message is `{ch: "agent-canvas", v: 2, type, …}`. Sends use `postMessage(…, "*")`, because the frame's origin is opaque. The host only accepts messages whose `event.source` is its own iframe.
+Every message is `{ch: "caddis", v: 2, type, …}`. Sends use `postMessage(…, "*")`, because the frame's origin is opaque. The host only accepts messages whose `event.source` is its own iframe.
 
 | Host → frame | |
 |---|---|

@@ -12,7 +12,7 @@ export interface Transport {
 }
 
 function electronTransport(): Transport {
-  const b = window.agentCanvas!;
+  const b = window.caddis!;
   return {
     platform: "electron",
     frameUrl: b.frameUrl,
@@ -53,4 +53,4 @@ function webTransport(): Transport {
   };
 }
 
-export const transport: Transport = window.agentCanvas ? electronTransport() : webTransport();
+export const transport: Transport = window.caddis ? electronTransport() : webTransport();

@@ -1,5 +1,5 @@
 {
-  "name": "agent-canvas",
+  "name": "caddis",
   "version": "0.2.0",
   "description": "A malleable canvas built live by a coding agent",
   "scripts": {

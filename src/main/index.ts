@@ -15,7 +15,7 @@ import type { CanvasStats, ClientMsg, ServerMsg } from "../shared/protocol";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = app.getAppPath();
-const DATA = path.resolve(process.env.AGENT_CANVAS_DATA_DIR ?? path.join(app.getPath("userData"), "data"));
+const DATA = path.resolve(process.env.CADDIS_DATA_DIR ?? path.join(app.getPath("userData"), "data"));
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "canvas", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, codeCache: true } },
@@ -38,7 +38,7 @@ function createWindow(sessionId?: string) {
     minWidth: 640,
     minHeight: 480,
     backgroundColor: "#0e0f13",
-    title: "Agent Canvas",
+    title: "Caddis",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(HERE, "../preload/index.cjs"),
@@ -146,7 +146,7 @@ app.whenReady().then(() => {
   buildMenu();
   void manager.discover();
   const arg = process.argv.find((a) => a.startsWith("--session="));
-  createWindow(arg?.slice("--session=".length) || process.env.AGENT_CANVAS_SESSION);
+  createWindow(arg?.slice("--session=".length) || process.env.CADDIS_SESSION);
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
 });
 

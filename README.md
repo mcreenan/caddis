@@ -1,4 +1,4 @@
-# Agent Canvas
+# Caddis
 
 Each window is one Claude session. The window itself is a live canvas the agent builds while you talk to it. The prompt and history float above the canvas: the agent can restyle them within limits, but it can't remove them.
 
@@ -25,12 +25,12 @@ TARGET=web BASE=http://192.168.86.73:5317 npm run e2e    # same E2E against `npm
 
 | Variable | Purpose |
 |---|---|
-| `AGENT_CANVAS_DATA_DIR` | Session storage. Defaults to Electron `userData/data`, or `./data` for web |
-| `AGENT_CANVAS_DEFAULT_CWD` | Default working directory (`$HOME`) |
-| `AGENT_CANVAS_CLAUDE_EXECUTABLE` | Path to `claude`. Defaults to `PATH` |
-| `AGENT_CANVAS_PERMISSION_MODE` | SDK permission mode (`acceptEdits`: edits and sandboxed commands in the working directory are allowed) |
-| `AGENT_CANVAS_SANDBOX` | `0` disables the Bash sandbox (commands then need pre-approval) |
-| `AGENT_CANVAS_SESSION` or `--session=<id>` | Reopen a session in Electron |
+| `CADDIS_DATA_DIR` | Session storage. Defaults to Electron `userData/data`, or `./data` for web |
+| `CADDIS_DEFAULT_CWD` | Default working directory (`$HOME`) |
+| `CADDIS_CLAUDE_EXECUTABLE` | Path to `claude`. Defaults to `PATH` |
+| `CADDIS_PERMISSION_MODE` | SDK permission mode (`acceptEdits`: edits and sandboxed commands in the working directory are allowed) |
+| `CADDIS_SANDBOX` | `0` disables the Bash sandbox (commands then need pre-approval) |
+| `CADDIS_SESSION` or `--session=<id>` | Reopen a session in Electron |
 | `HOST`, `PORT` | Web listener (`0.0.0.0`, `5317`) |
 
 On Linux, `scripts/with-display.mjs` makes Electron use Wayland when `WAYLAND_DISPLAY` is set but `XDG_SESSION_TYPE` isn't, which is common for shells started outside the login session.
@@ -61,7 +61,7 @@ src/core/        session core shared by Electron main and the web server
   static.ts      serves the frame shell + vendored three/d3/idiomorph
   dom.ts         persisted DOM ops on index.html (linkedom)
 src/main/        Electron main: windows, IPC, canvas:// protocol, capturePage, process stats
-src/preload/     contextBridge API (window.agentCanvas)
+src/preload/     contextBridge API (window.caddis)
 src/renderer/    React UI: start card, chrome, history, safe mode, iframe host
 src/canvas/      frame.html + runtime.js (apply-in-place, module lifecycle, data, stats, watchdog)
 src/server/      web target: HTTP + WebSocket on 0.0.0.0:5317

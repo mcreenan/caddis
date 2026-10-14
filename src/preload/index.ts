@@ -23,5 +23,5 @@ const api = {
   newWindow: () => ipcRenderer.send("ac:newWindow"),
 };
 
-export type AgentCanvasBridge = typeof api;
-contextBridge.exposeInMainWorld("agentCanvas", api);
+export type CaddisBridge = typeof api;
+contextBridge.exposeInMainWorld("caddis", api);

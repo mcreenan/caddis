@@ -16,7 +16,7 @@ import type { AgentProvider, AgentRun, ProviderContext } from "./types";
 const PREAPPROVED = ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "TodoWrite"];
 
 export function resolveClaudeExecutable(): string | undefined {
-  const override = process.env.AGENT_CANVAS_CLAUDE_EXECUTABLE;
+  const override = process.env.CADDIS_CLAUDE_EXECUTABLE;
   if (override) return override;
   const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
   // GUI launches often get a minimal PATH; include the installer's usual spots.
@@ -37,7 +37,7 @@ function baseOptions(): Options {
     pathToClaudeCodeExecutable: exe,
     settingSources: ["user", "project", "local"],
     persistSession: true,
-    env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "agent-canvas/0.2" },
+    env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "caddis/0.2" },
   };
 }
 
@@ -70,7 +70,7 @@ export class ClaudeProvider implements AgentProvider {
   async discover(): Promise<ProviderInfo> {
     const info: ProviderInfo = { id: "claude", label: "Claude", enabled: false, models: [] };
     const exe = resolveClaudeExecutable();
-    if (!exe) return { ...info, note: "claude CLI not found on PATH (set AGENT_CANVAS_CLAUDE_EXECUTABLE)" };
+    if (!exe) return { ...info, note: "claude CLI not found on PATH (set CADDIS_CLAUDE_EXECUTABLE)" };
     // Ask the CLI itself which models and effort levels this login supports.
     const q = query({ prompt: never, options: { ...baseOptions(), cwd: os.homedir() } });
     try {
@@ -113,9 +113,9 @@ export class ClaudeProvider implements AgentProvider {
         allowedTools: [...PREAPPROVED, ...canvasTools],
         // Edits are auto-accepted in the working directory. Bash runs in Claude Code's sandbox
         // (writes confined to cwd, network allowed) and is auto-approved there.
-        permissionMode: (process.env.AGENT_CANVAS_PERMISSION_MODE as Options["permissionMode"]) ?? "acceptEdits",
+        permissionMode: (process.env.CADDIS_PERMISSION_MODE as Options["permissionMode"]) ?? "acceptEdits",
         sandbox: {
-          enabled: process.env.AGENT_CANVAS_SANDBOX !== "0",
+          enabled: process.env.CADDIS_SANDBOX !== "0",
           autoAllowBashIfSandboxed: true,
           allowUnsandboxedCommands: false,
           network: { allowedDomains: ["*"], allowLocalBinding: true },

@@ -46,7 +46,7 @@ const fe = async <T>(fn: string): Promise<T> => (await frame()).evaluate(fn) as 
 
 async function launch(sessionArg?: string) {
   if (TARGET === "electron") {
-    const env = { ...process.env, AGENT_CANVAS_DATA_DIR: DATA, AGENT_CANVAS_DEFAULT_CWD: CWD } as Record<string, string>;
+    const env = { ...process.env, CADDIS_DATA_DIR: DATA, CADDIS_DEFAULT_CWD: CWD } as Record<string, string>;
     delete env.ANTHROPIC_API_KEY;
     if (!env.XDG_SESSION_TYPE && env.WAYLAND_DISPLAY) env.XDG_SESSION_TYPE = "wayland";
     app = await _electron.launch({ args: [".", ...(sessionArg ? [`--session=${sessionArg}`] : [])], env });

@@ -1,4 +1,4 @@
-// Agent Canvas frame runtime (protocol v2). Runs inside the sandboxed canvas
+// Caddis frame runtime (protocol v2). Runs inside the sandboxed canvas
 // iframe and applies resources live, with no reloads:
 //   *.css       -> <style data-ac-res> swapped in place
 //   index.html  -> body DOM-morphed (idiomorph), focus and input values kept
@@ -13,7 +13,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import d3 from "d3";
 import { Idiomorph } from "idiomorph";
 
-const CH = "agent-canvas";
+const CH = "caddis";
 const V = 2;
 const post = (m) => parent.postMessage({ ch: CH, v: V, ...m }, "*");
 

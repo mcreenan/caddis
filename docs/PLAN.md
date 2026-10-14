@@ -1,4 +1,4 @@
-# Agent Canvas — Plan
+# Caddis — Plan
 
 _v2 · 2026-10-13. Supersedes the research draft. The prototype in this repo implements most of §1–§6. §8 lists what is still open._
 
@@ -21,7 +21,7 @@ The canvas is a **by-product of the session**. It is persisted with the session 
 
 ## 1. Claude integration (the bb approach)
 
-- Use `query()` from `@anthropic-ai/claude-agent-sdk` with `pathToClaudeCodeExecutable` set to the `claude` binary on `PATH`. `AGENT_CANVAS_CLAUDE_EXECUTABLE` overrides it, and the SDK's bundled binary is the fallback.
+- Use `query()` from `@anthropic-ai/claude-agent-sdk` with `pathToClaudeCodeExecutable` set to the `claude` binary on `PATH`. `CADDIS_CLAUDE_EXECUTABLE` overrides it, and the SDK's bundled binary is the fallback.
 - **Auth comes from the CLI's own login**: a Pro/Max subscription via `claude login`, or `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`, which is passed through the environment. **We never set `ANTHROPIC_API_KEY`.** The start card shows the account the host reports (for example "Claude Max subscription (you@…)").
 - `settingSources: ["user","project","local"]`, so the user's CLAUDE.md, permissions and MCP servers apply.
 - `persistSession: true`, and a later turn resumes with `resume: <providerSessionId>`. Sessions therefore survive app restarts.
@@ -29,7 +29,7 @@ The canvas is a **by-product of the session**. It is persisted with the session 
 - **Models and efforts come from the host**: `supportedModels()` and `accountInfo()` at discovery. Nothing is hard-coded. Discovery is retried after 30 s if it fails.
 - Canvas tools come from `createSdkMcpServer` (in-process, `alwaysLoad`). `Read/Glob/Grep/WebFetch/WebSearch/TodoWrite` and the canvas tools are pre-approved.
   - **Edits and commands in the working directory are allowed by default:** `permissionMode: "acceptEdits"` auto-accepts file edits in the cwd, and Bash runs in Claude Code's sandbox (`autoAllowBashIfSandboxed`, `allowUnsandboxedCommands: false`), so commands are auto-approved but can only write inside the cwd. Network is allowed.
-  - Anything outside that is denied (there is no approvals UI yet). `AGENT_CANVAS_PERMISSION_MODE` and `AGENT_CANVAS_SANDBOX=0` override it.
+  - Anything outside that is denied (there is no approvals UI yet). `CADDIS_PERMISSION_MODE` and `CADDIS_SANDBOX=0` override it.
 
 ## 2. Tools: primitives that update in place
 
@@ -123,7 +123,7 @@ BrowserWindow (one per session; host renderer: React chrome, safe mode)
   - Navigation away from the host URL is blocked.
   - The permission handler allows only clipboard-write and fullscreen.
   - The frame shell is served from `protocol.handle("canvas")`, and in the web build from `/frame/`.
-- **Native features**: a directory picker for the cwd, `capturePage()` screenshots for `canvas_view`, Ctrl/Cmd+N or File → New Window for a new session window, and `--session=<id>` or `AGENT_CANVAS_SESSION` to reopen a session.
+- **Native features**: a directory picker for the cwd, `capturePage()` screenshots for `canvas_view`, Ctrl/Cmd+N or File → New Window for a new session window, and `--session=<id>` or `CADDIS_SESSION` to reopen a session.
 - **Linux/Wayland**:
   - Electron's `auto` ozone hint keys off `XDG_SESSION_TYPE`, which shells outside the login session often lack.
   - `scripts/with-display.mjs` sets it when `WAYLAND_DISPLAY` is present. Verified on Hyprland: a native Wayland window, with WebGL working.
@@ -141,7 +141,7 @@ BrowserWindow (one per session; host renderer: React chrome, safe mode)
 - the undo/redo stacks;
 - the activity log and the agent's read cursor.
 
-Saves are debounced and atomic (write then rename) and flushed on quit. Electron's `dataDir` is `userData/data`; the web server uses `./data`. `AGENT_CANVAS_DATA_DIR` overrides both.
+Saves are debounced and atomic (write then rename) and flushed on quit. Electron's `dataDir` is `userData/data`; the web server uses `./data`. `CADDIS_DATA_DIR` overrides both.
 
 ## 8. Open questions and next steps
 

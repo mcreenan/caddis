@@ -18,7 +18,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PORT = Number(process.env.PORT ?? 5317);
 const UI = path.join(ROOT, "out/renderer");
-const DATA = path.resolve(process.env.AGENT_CANVAS_DATA_DIR ?? path.join(ROOT, "data"));
+const DATA = path.resolve(process.env.CADDIS_DATA_DIR ?? path.join(ROOT, "data"));
 
 const manager = new SessionManager(DATA, undefined, "web");
 const serveFrame = createFrameFiles(ROOT);
@@ -89,7 +89,7 @@ wss.on("connection", (ws: WebSocket) => {
   ws.on("close", () => conn.close());
 });
 
-server.listen(PORT, HOST, () => console.log(`agent-canvas web on http://${HOST}:${PORT}  (data: ${DATA})`));
+server.listen(PORT, HOST, () => console.log(`caddis web on http://${HOST}:${PORT}  (data: ${DATA})`));
 
 for (const sig of ["SIGINT", "SIGTERM"] as const)
   process.on(sig, () => {
