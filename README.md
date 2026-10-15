@@ -1,6 +1,15 @@
 # Caddis
 
-Caddis is a desktop app where each window is one Claude session, and the window itself is the canvas. Describe what you want and Claude builds it live: a page, a 2D drawing surface or a 3D scene. You keep chatting to change it.
+Caddis is a desktop app where a coding agent builds straight into the window you're looking at. Describe a page, a 2D drawing or a 3D scene, watch it appear, and keep talking to change it.
+
+- **Builds live, in place.** The canvas updates as the agent edits it, without reloading, so a 3D scene keeps its camera and animation.
+- **Uses the agents you already have.** Claude, Codex, or any [Agent Client Protocol](https://agentclientprotocol.com) agent such as opencode, Gemini CLI or Cursor. If an agent is installed and signed in, it works out of the box with your existing login.
+- **A shared data store.** The page and the agent read and write the same data, so what the page saves, the agent can work with, and the other way round.
+- **Interactive pages.** What you do on the page reaches the agent with your next message: tick off a task, then ask about it.
+- **Save, share and open `.caddis` files.** One file holds the canvas, its data, the conversation and the files the agent wrote.
+- **Pick up where you left off.** Sessions save as you go. Reopen one and the canvas, data and conversation are as you left them.
+- **Undo and redo** for the canvas and the controls.
+- **Works in a real folder.** The agent can read and edit files and run commands in a working directory you choose, or a fresh temporary one.
 
 ![The opening screen, asking "What should we make?" above a prompt asking for a 3D solar system, with model, effort and working-directory pickers](docs/images/start-screen.png)
 
