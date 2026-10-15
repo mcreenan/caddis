@@ -194,9 +194,15 @@ export class Session {
     const notes: string[] = [];
     let providerSessionId: string | undefined;
     const origSid = a.manifest.session?.providerSessionId;
-    if (a.transcript && origSid && installTranscript(origSid, config.cwd, a.transcript)) providerSessionId = origSid;
-    else if (origSid)
-      notes.push("Claude's transcript could not be restored, so Claude starts this conversation fresh.");
+    const sameAgent = config.provider === a.manifest.session?.config?.provider;
+    if (config.provider === "claude" && sameAgent) {
+      if (a.transcript && origSid && installTranscript(origSid, config.cwd, a.transcript)) providerSessionId = origSid;
+      else if (origSid)
+        notes.push("Claude's transcript could not be restored, so Claude starts this conversation fresh.");
+    } else if (sameAgent && origSid) {
+      // Other agents keep conversations on the machine that ran them; forking works there and falls back to a fresh start elsewhere.
+      providerSessionId = origSid;
+    } else if (origSid) notes.push("This artifact was made with another agent, so the conversation starts fresh.");
 
     if (a.workspace.length) {
       if (config.cwd === a.manifest.session?.config?.cwd) {
@@ -450,10 +456,15 @@ export class Session {
         if (item && item.kind === "tool") {
           item.state = e.isError ? "error" : "done";
           item.result = e.result.slice(0, 4000);
+          if (e.input !== undefined) item.input = e.input;
           this.broadcast({
             t: "history.update",
             id: item.id,
-            patch: { state: item.state, result: item.result } as Partial<HistoryItem>,
+            patch: {
+              state: item.state,
+              result: item.result,
+              ...(e.input !== undefined && { input: item.input }),
+            } as Partial<HistoryItem>,
           });
           this.save();
         }
@@ -471,6 +482,9 @@ export class Session {
           costUsd: e.costUsd,
         });
         this.setStatus(e.ok ? "idle" : "error", e.error);
+        return;
+      case "notice":
+        this.addItem({ id: randomUUID(), ts: Date.now(), kind: "notice", level: e.level, text: e.text });
         return;
       case "fatal":
         this.addItem({ id: randomUUID(), ts: Date.now(), kind: "notice", level: "error", text: e.error });

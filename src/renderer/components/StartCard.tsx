@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import type { Effort } from "../../shared/protocol";
+import type { Effort, ProviderInfo } from "../../shared/protocol";
 import { fileOpen, send } from "../controller";
 import { useUi } from "../store";
 import { transport } from "../transport";
@@ -12,7 +12,9 @@ const IDEAS = [
   "A step-sequencer synth",
   "A pixel-art drawing pad",
 ];
-const EFFORT_LABEL: Record<Effort, string> = {
+const EFFORT_LABEL: Record<string, string> = {
+  none: "None",
+  minimal: "Minimal",
   low: "Low",
   medium: "Medium",
   high: "High",
@@ -241,9 +243,22 @@ function CwdPicker({ cwd, setCwd }: { cwd: string; setCwd: (v: string) => void }
   );
 }
 
+const effortLabel = (p: ProviderInfo | undefined, e: Effort) =>
+  p?.effortLabels?.[e] ?? EFFORT_LABEL[e] ?? e.charAt(0).toUpperCase() + e.slice(1);
+
+/** Claude unless it's unavailable and another agent is ready. */
+function defaultProvider(providers: ProviderInfo[]) {
+  const claude = providers.find((p) => p.id === "claude");
+  if (!claude || (!claude.enabled && !claude.pending)) return providers.find((p) => p.enabled)?.id ?? "claude";
+  return "claude";
+}
+
 export function StartCard() {
   const { providers, welcomed, defaultCwd, error, connected } = useUi();
-  const claude = providers.find((p) => p.id === "claude");
+  const [chosen, setChosen] = useState<string>();
+  const providerId = chosen ?? defaultProvider(providers);
+  const provider = providers.find((p) => p.id === providerId);
+  const agent = provider?.label ?? "Claude";
   const [model, setModel] = useState<string>();
   const [effort, setEffort] = useState<Effort>();
   const [prompt, setPrompt] = useState("");
@@ -254,30 +269,31 @@ export function StartCard() {
   useEffect(() => setBusy(false), [error]);
 
   // Nothing chosen yet means the CLI's own defaults, shown as the concrete model and effort they resolve to.
-  const models = claude?.models ?? [];
-  const modelId = model ?? claude?.defaultModel ?? models[0]?.id ?? "";
+  const models = provider?.models ?? [];
+  const modelId = model ?? provider?.defaultModel ?? models[0]?.id ?? "";
   const info = models.find((m) => m.id === modelId);
   const efforts = info?.efforts ?? [];
   const shownEffort = effort ?? info?.defaultEffort ?? (efforts.includes("high") ? "high" : efforts[0]);
+  const loading = !welcomed || Boolean(provider?.pending);
 
-  const ready = Boolean(claude?.enabled) && connected;
+  const ready = Boolean(provider?.enabled) && connected;
   const start = () => {
     if (!prompt.trim() || !ready) return;
     setBusy(true);
     useUi.setState({ error: undefined });
     send({
       t: "session.start",
-      config: { provider: "claude", model: modelId, effort: effort ?? "", cwd },
+      config: { provider: providerId, model: modelId, effort: effort ?? "", cwd },
       prompt: prompt.trim(),
     });
   };
   const status = !connected
     ? "Connecting…"
-    : !welcomed
-      ? "Asking Claude Code for models…"
-      : claude?.enabled
-        ? (claude.auth?.replace(/^Claude /, "") ?? "Signed in")
-        : (claude?.note ?? "Claude unavailable");
+    : loading
+      ? `Asking ${agent} for models…`
+      : provider?.enabled
+        ? (provider.auth?.replace(/^Claude /, "") ?? "Ready")
+        : (provider?.note ?? `${agent} unavailable`);
 
   return (
     <form
@@ -297,7 +313,7 @@ export function StartCard() {
             autoFocus
             rows={2}
             value={prompt}
-            placeholder="Ask Claude to build anything…"
+            placeholder={`Ask ${agent} to build anything…`}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -317,6 +333,27 @@ export function StartCard() {
           </button>
         </div>
         <div className="composer-bar">
+          {providers.length > 1 && (
+            <>
+              <Menu
+                label="Agent"
+                testId="provider"
+                value={providerId}
+                options={providers.map((p) => ({
+                  value: p.id,
+                  label: p.label,
+                  hint: p.pending ? "checking…" : p.enabled ? undefined : "unavailable",
+                  icon: <ProviderIcon id={p.id} label={p.label} />,
+                }))}
+                onChange={(v) => {
+                  setChosen(v);
+                  setModel(undefined);
+                  setEffort(undefined);
+                }}
+              />
+              <span className="composer-sep" />
+            </>
+          )}
           <Menu
             label="Model"
             testId="model"
@@ -328,9 +365,15 @@ export function StartCard() {
                     value: m.id,
                     label: m.label,
                     hint: m.description,
-                    icon: <ProviderIcon id="claude" />,
+                    icon: <ProviderIcon id={providerId} label={agent} />,
                   }))
-                : [{ value: "", label: welcomed ? "Claude" : "Loading models…", icon: <ProviderIcon id="claude" /> }]
+                : [
+                    {
+                      value: "",
+                      label: loading ? "Loading models…" : agent,
+                      icon: <ProviderIcon id={providerId} label={agent} />,
+                    },
+                  ]
             }
             onChange={(v) => {
               setModel(v);
@@ -347,10 +390,10 @@ export function StartCard() {
                 icon={<EffortBars n={efforts.length} level={efforts.indexOf(shownEffort!)} />}
                 options={efforts.map((e, i) => ({
                   value: e,
-                  label: EFFORT_LABEL[e] ?? e,
+                  label: effortLabel(provider, e),
                   icon: <EffortBars n={efforts.length} level={i} />,
                 }))}
-                onChange={(v) => setEffort(v as Effort)}
+                onChange={(v) => setEffort(v)}
               />
             </>
           )}
@@ -369,9 +412,9 @@ export function StartCard() {
       </div>
 
       <div className="start-meta">
-        <span className={`provider ${claude?.enabled || !welcomed ? "" : "err"}`} title={status}>
-          <ProviderIcon id="claude" size={13} />
-          <b>Claude</b>
+        <span className={`provider ${provider?.enabled || loading ? "" : "err"}`} title={status}>
+          <ProviderIcon id={providerId} label={agent} size={13} />
+          <b>{agent}</b>
           <span className="provider-auth" data-testid="auth">
             {status}
           </span>

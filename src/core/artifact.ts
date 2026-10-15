@@ -31,7 +31,7 @@ import { readZip, writeZip, type ZipEntry } from "./zip";
  *   activity.json            the canvas activity log and the agent's read cursor
  *   undo.json                undo/redo stacks
  *   claude/transcript.jsonl  Claude Code's own session transcript, so the conversation can resume
- *   workspace/<path>         files Claude wrote in the working directory (Write/Edit tools)
+ *   workspace/<path>         files the agent wrote in the working directory (Write/Edit tools)
  *   preview.png              what the window looked like when saved
  */
 
@@ -181,10 +181,15 @@ export function writtenFiles(history: HistoryItem[], cwd: string): string[] {
   for (const h of history) {
     if (h.kind !== "tool" || h.state === "error") continue;
     const key = WRITE_TOOLS[h.name];
-    const p = key && (h.input as Record<string, unknown> | undefined)?.[key];
-    if (typeof p !== "string") continue;
-    const rel = safeRelative(cwd, path.resolve(cwd, p));
-    if (rel) out.add(rel);
+    const input = h.input as Record<string, unknown> | undefined;
+    if (!key || !input) continue;
+    // Claude names the path `key`; other agents' edits use filePath/path, or list several in `files`.
+    const paths = [input[key], input.filePath, input.path, ...(Array.isArray(input.files) ? input.files : [])];
+    for (const p of paths) {
+      if (typeof p !== "string") continue;
+      const rel = safeRelative(cwd, path.resolve(cwd, p));
+      if (rel) out.add(rel);
+    }
   }
   return [...out].sort();
 }
@@ -223,11 +228,15 @@ export function buildArtifact(d: Persisted, preview?: Buffer): { buffer: Buffer;
   });
   add("undo.json", jsonBuf({ undo: d.undo, redo: d.redo }), "undo", { mime: "application/json" });
 
-  const transcript = d.providerSessionId ? findTranscript(d.providerSessionId, d.config.cwd) : undefined;
+  // Only Claude's transcript travels; other agents' conversations resume only on the machine that has them.
+  const claude = d.config.provider === "claude";
+  const transcript = claude && d.providerSessionId ? findTranscript(d.providerSessionId, d.config.cwd) : undefined;
   if (transcript)
     add("claude/transcript.jsonl", readFileSync(transcript), "transcript", { mime: "application/x-ndjson" });
-  else if (d.providerSessionId)
+  else if (d.providerSessionId && claude)
     notes.push("Claude's transcript was not found, so the conversation can be read but not resumed.");
+  else if (d.providerSessionId)
+    notes.push("The agent's own conversation isn't included, so it resumes only on this machine.");
 
   let total = 0;
   for (const rel of writtenFiles(d.history, d.config.cwd)) {

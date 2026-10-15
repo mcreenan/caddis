@@ -1,9 +1,8 @@
 import { query, type Options, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { accessSync, constants } from "node:fs";
 import os from "node:os";
-import path from "node:path";
 import type { Effort, ModelInfo, ProviderInfo } from "../../shared/protocol";
 import { createCanvasMcpServer, MCP_SERVER_NAME, mcpToolName } from "../tools";
+import { findExecutable } from "./exec";
 import type { AgentProvider, AgentRun, ProviderContext } from "./types";
 
 /**
@@ -16,24 +15,7 @@ import type { AgentProvider, AgentRun, ProviderContext } from "./types";
 const PREAPPROVED = ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "TodoWrite"];
 
 export function resolveClaudeExecutable(): string | undefined {
-  const override = process.env.CADDIS_CLAUDE_EXECUTABLE;
-  if (override) return override;
-  const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  // GUI launches often get a minimal PATH; include the installer's usual spots.
-  dirs.push(
-    path.join(os.homedir(), ".local/bin"),
-    path.join(os.homedir(), ".claude/local"),
-    "/usr/local/bin",
-    "/opt/homebrew/bin",
-  );
-  for (const d of dirs) {
-    const p = path.join(d, process.platform === "win32" ? "claude.exe" : "claude");
-    try {
-      accessSync(p, constants.X_OK);
-      return p;
-    } catch {}
-  }
-  return undefined;
+  return process.env.CADDIS_CLAUDE_EXECUTABLE || findExecutable("claude");
 }
 
 function baseOptions(): Options {
@@ -156,7 +138,7 @@ export class ClaudeProvider implements AgentProvider {
         ...baseOptions(),
         cwd: config.cwd,
         model: config.model || undefined,
-        effort: config.effort || undefined,
+        effort: (config.effort || undefined) as Options["effort"],
         systemPrompt: ctx.systemPrompt,
         resume: ctx.resumeId,
         forkSession: ctx.resumeId ? ctx.fork : undefined,

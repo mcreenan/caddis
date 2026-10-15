@@ -183,8 +183,10 @@ export interface ChromeApplyResult {
 // Session + history
 // ---------------------------------------------------------------------------
 
-export type ProviderId = "claude";
-export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+/** "claude", "codex", or "acp-<agent>" for Agent Client Protocol agents. */
+export type ProviderId = string;
+/** Reasoning effort as the provider names it (Claude: low…max; Codex: minimal…ultra; ACP: the agent's own levels). */
+export type Effort = string;
 
 export interface ModelInfo {
   id: string;
@@ -199,19 +201,24 @@ export interface ProviderInfo {
   id: ProviderId;
   label: string;
   enabled: boolean;
+  /** Discovery hasn't finished yet; a `providers` message follows. */
+  pending?: boolean;
   /** e.g. "Claude Max subscription (you@example.com)". */
   auth?: string;
   note?: string;
   models: ModelInfo[];
   /** Id of the model the CLI uses when none is chosen. */
   defaultModel?: string;
+  /** Labels for effort ids the UI doesn't know. */
+  effortLabels?: Record<string, string>;
 }
 
 export interface SessionConfig {
   provider: ProviderId;
   /** Empty = provider default. */
   model: string;
-  effort: Effort | "";
+  /** Empty = provider default. */
+  effort: Effort;
   cwd: string;
 }
 

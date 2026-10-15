@@ -9,6 +9,9 @@ Caddis is a desktop app where each window is one Claude session, and the window 
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code), installed and logged in. A Pro or Max subscription works (`claude login`), and no API key is needed. On a machine without an interactive login, set `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
+- Optionally, other coding agents, each installed and signed in through its own CLI. Caddis lists every one it finds and you pick one per session:
+  - [Codex](https://github.com/openai/codex) (`codex login`), driven through `codex app-server`.
+  - Any [Agent Client Protocol](https://agentclientprotocol.com) agent. Caddis knows how to start opencode, Gemini CLI, Cursor (`cursor-agent`), Grok Build, omp and Hermes Agent, and you can add others (see [Other agents](#other-agents)).
 - Node 24 or newer, only if you run from source.
 
 ## Install and run
@@ -42,7 +45,7 @@ Ctrl/Cmd+N opens another window, which is a new session. You can also open a sav
 
 ## Using it
 
-1. **Start a session.** Type what the window should become. Below the prompt you can change the model, effort level and working directory. Models and effort levels come from your Claude login and start on its defaults. Unless you pick a folder, each session gets a new temporary directory.
+1. **Start a session.** Type what the window should become. Below the prompt you can change the agent, model, effort level and working directory. The agent menu appears when more than one is installed and starts on Claude. Models and effort levels come from the agent's own login and start on its defaults. Unless you pick a folder, each session gets a new temporary directory.
 2. **Watch it build.** Changes are applied in place without reloading, so 3D scenes keep their camera and animation state as Claude edits them.
 3. **Keep talking.** After the first message the prompt shrinks to a single line, and the history panel shows Claude's replies and tool calls. The titlebar's history button collapses it to a small dot that pulses while Claude is working; click the dot or the button again to expand it.
 4. **Interact with the canvas.** Pages Claude builds can store data and send events that Claude sees with your next message. For example, tick off a task on the page, then ask Claude about it.
@@ -85,7 +88,7 @@ A `.caddis` file is a zip archive you can inspect with any unzip tool:
 | `data.json`                                 | The data store shared by Claude and the page                                                                                            |
 | `history.json`                              | The conversation as shown in the history panel                                                                                          |
 | `canvas/…`                                  | Every canvas file: `index.html`, stylesheets, modules and assets                                                                        |
-| `claude/transcript.jsonl`                   | Claude Code's transcript, so Claude remembers the conversation after you open the file                                                  |
+| `claude/transcript.jsonl`                   | Claude Code's transcript, so Claude remembers the conversation after you open the file (Claude sessions only)                           |
 | `workspace/…`                               | Files Claude created or edited in the working directory with its file tools. Changes made by shell commands aren't tracked              |
 | `chrome.json`, `activity.json`, `undo.json` | Control styling, canvas activity, and undo/redo history                                                                                 |
 | `preview.png`                               | A screenshot of the window when it was saved                                                                                            |
@@ -95,11 +98,36 @@ When you open a file:
 - The session keeps its original working directory if that folder exists on this machine. Otherwise it uses `CADDIS_DEFAULT_CWD` or a new temporary directory.
 - Workspace files are written back only into the original folder, and only when they're missing. Existing files are never overwritten.
 - Claude continues from a copy of the saved conversation, so the original session is left unchanged.
+- Other agents keep their conversations in their own stores, so the file can't carry them. On the machine that saved it, the agent continues from a fork of its conversation (or the conversation itself if it can't fork). Elsewhere it starts fresh with the canvas, data and history intact.
 - The archive is checked against its manifest, and a file that doesn't match is rejected.
 
 ### What Claude can do
 
 In its working directory, Claude can read and edit files and run shell commands without asking. Commands run in Claude Code's sandbox, which allows writes only inside the working directory and allows network access. Canvas pages are sandboxed from the app but can reach the network.
+
+Codex works the same way in its `workspace-write` sandbox with network access, and never stops to ask for approval: anything outside the sandbox is declined.
+
+ACP agents apply their own settings, and Caddis answers their permission requests because there is no approval UI yet. It allows the canvas tools, reading, searching and fetching, and edits to files inside the working directory. It refuses everything else, including shell commands the agent asks about, and says so in the history. Set `CADDIS_ACP_PERMISSIONS=all` to allow everything.
+
+The canvas tools reach Codex and ACP agents through an MCP server that Caddis serves on a random loopback port, under a secret path for each session.
+
+### Other agents
+
+To add an ACP agent Caddis doesn't know, list it in `acp-agents.json` in the data directory (`CADDIS_DATA_DIR`), or in `CADDIS_ACP_AGENTS` as JSON or the path to a JSON file:
+
+```json
+[
+  {
+    "id": "my-agent",
+    "label": "My Agent",
+    "command": "my-agent",
+    "args": ["--acp"],
+    "env": { "MY_AGENT_MODE": "fast" }
+  }
+]
+```
+
+An entry with the same `id` as a known agent (`opencode`, `gemini`, `cursor`, `grok`, `omp`, `hermes-agent`) replaces it. Models and effort levels come from the agent's session config options when it offers them.
 
 ### Use it from another device
 
@@ -107,15 +135,18 @@ In its working directory, Claude can read and edit files and run shell commands 
 
 ### Settings
 
-| Variable                             | Purpose                                                                |
-| ------------------------------------ | ---------------------------------------------------------------------- |
-| `CADDIS_DEFAULT_CWD`                 | Default working directory (a new temporary directory for each session) |
-| `CADDIS_DATA_DIR`                    | Where sessions are stored                                              |
-| `CADDIS_CLAUDE_EXECUTABLE`           | Path to `claude`, if it isn't on `PATH`                                |
-| `CADDIS_PERMISSION_MODE`             | Claude permission mode (default `acceptEdits`)                         |
-| `CADDIS_SANDBOX`                     | `0` turns off the command sandbox; commands then need pre-approval     |
-| `CADDIS_SESSION` or `--session=<id>` | Reopen a specific session                                              |
-| `HOST`, `PORT`                       | Web server address (`0.0.0.0`, `5317`)                                 |
+| Variable                             | Purpose                                                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `CADDIS_DEFAULT_CWD`                 | Default working directory (a new temporary directory for each session)                                       |
+| `CADDIS_DATA_DIR`                    | Where sessions are stored                                                                                    |
+| `CADDIS_CLAUDE_EXECUTABLE`           | Path to `claude`, if it isn't on `PATH`                                                                      |
+| `CADDIS_CODEX_EXECUTABLE`            | Path to `codex`, if it isn't on `PATH`                                                                       |
+| `CADDIS_ACP_AGENTS`                  | Extra ACP agents, as JSON or a file path (see [Other agents](#other-agents))                                 |
+| `CADDIS_ACP_PERMISSIONS`             | `all` lets ACP agents do anything they ask permission for                                                    |
+| `CADDIS_PERMISSION_MODE`             | Claude permission mode (default `acceptEdits`)                                                               |
+| `CADDIS_SANDBOX`                     | `0` turns off the command sandbox. Claude's commands then need pre-approval, and Codex runs with full access |
+| `CADDIS_SESSION` or `--session=<id>` | Reopen a specific session                                                                                    |
+| `HOST`, `PORT`                       | Web server address (`0.0.0.0`, `5317`)                                                                       |
 
 ## Development
 
@@ -135,7 +166,7 @@ npm run dist        # installer for this OS in dist/ (also dist:linux, dist:mac)
 | `src/preload`  | Preload bridge (`window.caddis`)                               |
 | `src/renderer` | React UI: chrome, prompt and history                           |
 | `src/canvas`   | Runtime served into the sandboxed canvas frame                 |
-| `src/core`     | Sessions, Claude provider, tools and artifacts, shared by both |
+| `src/core`     | Sessions, agent providers, tools and artifacts, shared by both |
 | `src/server`   | Standalone web server (`npm run web`)                          |
 | `src/shared`   | Types shared across processes                                  |
 | `e2e`          | End-to-end test                                                |

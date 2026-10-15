@@ -8,16 +8,16 @@ A personal tool. Each window is one Claude session, and the whole window is a li
 
 The canvas is a **by-product of the session**. It is persisted with the session and reopens with it. Sharing comes later, as a self-contained export (§8).
 
-| Area         | Decision                                                                                                                                                                                                                                             |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shell        | **Electron first** (Electron 44, Vite+ with vite-plugin-electron, electron-builder, React 19, TS, Zustand, zod). The web server (`0.0.0.0:5317`, LAN + Tailscale) is a secondary target running the same core.                                       |
-| Agent        | **Claude only**, via the Agent SDK driving the installed `claude` CLI so a **Pro/Max subscription** works. The `AgentProvider` interface stays, but Codex and ACP are out of near-term scope.                                                        |
-| Canvas model | **Resources held by the core** (`index.html`, `*.css`, `*.js` modules, assets) and **applied in place** by a runtime in the frame. There is no file watching, and a page reload is only an explicit fallback.                                        |
-| Tools        | 20 in-process MCP tools across resources, canvas, data, events, chrome and stats (§2). Every write returns the errors and warnings it caused.                                                                                                        |
-| State        | A per-session **data store** that both the agent and the page read and write reactively. Page activity flows back to the agent.                                                                                                                      |
-| Chrome       | First-class tools (`chrome_get/set/reset`) with clamped props echoed back. The page can call `canvas.chrome.set` through the same clamps. An immutable base, a host-owned titlebar with reset and undo, and an undo that spans chrome and resources. |
-| Sandbox      | An iframe with `sandbox="allow-scripts …"` and **no `allow-same-origin`**, so it gets an opaque origin. In Electron it sits on the `canvas://` scheme and runs as an out-of-process iframe. **Network is allowed.**                                  |
-| Monitoring   | The runtime collects fps, heap, three.js `renderer.info`, GL contexts and live timers/listeners/rAF. A watchdog flags leaks and fps collapse in write results and in the UI.                                                                         |
+| Area         | Decision                                                                                                                                                                                                                                                       |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell        | **Electron first** (Electron 44, Vite+ with vite-plugin-electron, electron-builder, React 19, TS, Zustand, zod). The web server (`0.0.0.0:5317`, LAN + Tailscale) is a secondary target running the same core.                                                 |
+| Agent        | **Claude by default**, via the Agent SDK driving the installed `claude` CLI so a **Pro/Max subscription** works. **Codex** through `codex app-server`, and **ACP agents** through `@agentclientprotocol/sdk`, get the canvas tools from a loopback MCP server. |
+| Canvas model | **Resources held by the core** (`index.html`, `*.css`, `*.js` modules, assets) and **applied in place** by a runtime in the frame. There is no file watching, and a page reload is only an explicit fallback.                                                  |
+| Tools        | 20 in-process MCP tools across resources, canvas, data, events, chrome and stats (§2). Every write returns the errors and warnings it caused.                                                                                                                  |
+| State        | A per-session **data store** that both the agent and the page read and write reactively. Page activity flows back to the agent.                                                                                                                                |
+| Chrome       | First-class tools (`chrome_get/set/reset`) with clamped props echoed back. The page can call `canvas.chrome.set` through the same clamps. An immutable base, a host-owned titlebar with reset and undo, and an undo that spans chrome and resources.           |
+| Sandbox      | An iframe with `sandbox="allow-scripts …"` and **no `allow-same-origin`**, so it gets an opaque origin. In Electron it sits on the `canvas://` scheme and runs as an out-of-process iframe. **Network is allowed.**                                            |
+| Monitoring   | The runtime collects fps, heap, three.js `renderer.info`, GL contexts and live timers/listeners/rAF. A watchdog flags leaks and fps collapse in write results and in the UI.                                                                                   |
 
 ## 1. Claude integration (the bb approach)
 
@@ -170,7 +170,7 @@ Saves are debounced and atomic (write then rename) and flushed on quit. Electron
 4. "Point at element" context.
 5. Packaging (electron-builder, fuses, asar).
 6. Pairing or auth before the web target leaves trusted networks.
-7. Codex/ACP providers behind the existing interface.
+7. Carry Codex and ACP conversations inside `.caddis` files (only Claude's transcript travels today).
 
 **Risks**
 

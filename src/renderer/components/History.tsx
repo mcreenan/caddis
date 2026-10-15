@@ -172,7 +172,9 @@ function Item({ item }: { item: HistoryItem }) {
       const bits = [item.ok ? "done" : `stopped${item.error ? `: ${item.error}` : ""}`];
       if (item.durationMs) bits.push(`${(item.durationMs / 1000).toFixed(1)}s`);
       // The SDK reports cumulative, list-price cost; meaningless on a subscription.
-      const metered = !/subscription/i.test(useUi.getState().providers.find((p) => p.id === "claude")?.auth ?? "");
+      const { providers, config } = useUi.getState();
+      const auth = providers.find((p) => p.id === (config?.provider ?? "claude"))?.auth ?? "";
+      const metered = !/subscription/i.test(auth);
       if (item.costUsd && metered) bits.push(`session $${item.costUsd.toFixed(3)}`);
       return <div className={`hi hi-turn${item.ok ? "" : " bad"}`}>{bits.join(" · ")}</div>;
     }

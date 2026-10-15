@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { HOST_Z } from "../../shared/chrome";
 import { TITLE_MAX, type UiCommand } from "../../shared/protocol";
 import { fileNew, fileOpen, fileSave, historyMini, renameSession, uiCommand } from "../controller";
-import { useUi } from "../store";
+import { useSessionProvider, useUi } from "../store";
 import { statusText } from "./History";
 
 /**
@@ -420,6 +420,7 @@ function Title() {
   const renaming = useUi((s) => s.renaming && s.phase === "session");
   const chosen = useUi((s) => s.title);
   const file = useUi((s) => s.file);
+  const agent = useSessionProvider()?.label ?? "the agent";
   if (renaming)
     return (
       <div className="tb-title">
@@ -428,7 +429,7 @@ function Title() {
     );
   const hint = [
     file && `Saved as ${file}`,
-    chosen?.by === "agent" && `Named by Claude: ${chosen.text}`,
+    chosen?.by === "agent" && `Named by ${agent}: ${chosen.text}`,
     inSession && "Double-click to rename",
   ]
     .filter(Boolean)

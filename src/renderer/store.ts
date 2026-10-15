@@ -145,3 +145,7 @@ export function reduce(msg: ServerMsg) {
       return set({ error: msg.message });
   }
 }
+
+/** The open session's provider info, if discovery knows it. */
+export const useSessionProvider = () =>
+  useUi((s) => s.providers.find((p) => p.id === (s.config?.provider ?? "claude")));

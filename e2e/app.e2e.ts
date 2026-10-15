@@ -114,9 +114,13 @@ async function main() {
   // ---------------------------------------------------------------- 0. start screen
   await launch();
   await page.waitForSelector('[data-testid="start"]');
-  await page.waitForFunction(() => document.querySelector('[data-testid="start"] select option:nth-child(2)'), null, {
-    timeout: 60_000,
-  });
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="start"] [data-testid="model"]:not(:disabled)'),
+    null,
+    {
+      timeout: 60_000,
+    },
+  );
   const auth = (await page.locator('[data-testid="auth"]').textContent()) ?? "";
   summary.auth = auth;
   check("start screen shows subscription auth", /subscription/i.test(auth), auth);

@@ -8,7 +8,10 @@ export type ProviderEvent =
   | { type: "text"; messageId: string; text: string }
   | { type: "thinking"; messageId: string; text: string }
   | { type: "tool-start"; id: string; name: string; input: unknown }
-  | { type: "tool-end"; id: string; result: string; isError: boolean }
+  /** `input` replaces the tool's input when it was only known once the call finished. */
+  | { type: "tool-end"; id: string; result: string; isError: boolean; input?: unknown }
+  /** Shown in the history without ending the turn (e.g. a resume that fell back to a fresh conversation). */
+  | { type: "notice"; level: "info" | "error"; text: string }
   | { type: "turn-end"; ok: boolean; error?: string; durationMs?: number; costUsd?: number }
   | { type: "fatal"; error: string };
 

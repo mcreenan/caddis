@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { CHROME_MARGIN, CHROME_Z, effectiveProps, layoutChrome, safeCssProps, type Rect } from "../../shared/chrome";
 import type { ChromeApplyResult, ChromeComponent, Effort } from "../../shared/protocol";
 import { TITLEBAR_H, send, setHistoryMode } from "../controller";
-import { useUi } from "../store";
+import { useSessionProvider, useUi } from "../store";
 import { HistoryList, Transcript, statusText } from "./History";
 import { Icon } from "./ToolIcon";
 
@@ -168,9 +168,9 @@ export function PromptBar() {
 /** The session's model and effort, resolved to the CLI defaults when none were chosen. */
 function usePromptMeta() {
   const config = useUi((s) => s.config);
-  const claude = useUi((s) => s.providers.find((p) => p.id === "claude"));
-  const id = config?.model || claude?.defaultModel || "";
-  const info = claude?.models.find((m) => m.id === id);
+  const provider = useSessionProvider();
+  const id = config?.model || provider?.defaultModel || "";
+  const info = provider?.models.find((m) => m.id === id);
   const efforts: Effort[] = info?.efforts ?? [];
   const effort = config?.effort || info?.defaultEffort || "";
   return {
