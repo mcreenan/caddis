@@ -50,9 +50,11 @@
         display: block;
         z-index: 0;
       }
+      /* A body background would cover the surface; canvas_view paints it underneath, so match. */
       html.ac-surface body {
         position: relative;
         z-index: 1;
+        background: transparent !important;
       }
     </style>
     <script type="module" src="./runtime.js"></script>
