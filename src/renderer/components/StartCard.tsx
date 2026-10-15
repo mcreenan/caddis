@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Effort } from "../../shared/protocol";
 import { fileOpen, send } from "../controller";
 import { useUi } from "../store";
 import { transport } from "../transport";
 import { ProviderIcon } from "./ProviderIcon";
+import { Icon } from "./ToolIcon";
 
 const IDEAS = [
   "A 3D solar system",
@@ -41,25 +42,138 @@ const CHEVRON = "m4.5 6.5 3.5 3.5 3.5-3.5";
 const FOLDER =
   "M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z";
 
-function Pill({ label, children }: { label: string; children: ReactNode }) {
+/** Closes a popover on a click outside `ref`. */
+function useDismiss(open: boolean, close: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => ref.current?.contains(e.target as Node) || close();
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open, close]);
+  return ref;
+}
+
+interface MenuOption {
+  value: string;
+  label: string;
+  hint?: string;
+  icon?: ReactNode;
+}
+
+/** A styled stand-in for <select>: the native popup can't be themed or hold icons. */
+function Menu({
+  label,
+  testId,
+  value,
+  options,
+  icon,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  testId: string;
+  value: string;
+  options: MenuOption[];
+  icon?: ReactNode;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useDismiss(open, close);
+  const list = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.value === value) ?? options[0];
+  const show = () => {
+    setActive(Math.max(options.indexOf(current), 0));
+    setOpen(true);
+  };
+  const pick = (o: MenuOption) => {
+    onChange(o.value);
+    setOpen(false);
+  };
+  useEffect(() => {
+    if (open) list.current?.children[active]?.scrollIntoView({ block: "nearest" });
+  }, [open, active]);
   return (
-    <label className="pill" title={label}>
-      {children}
-      <Glyph d={CHEVRON} size={12} />
-    </label>
+    <div ref={ref} className="menu-wrap">
+      <button
+        type="button"
+        className={`pill${open ? " on" : ""}`}
+        title={label}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        data-testid={testId}
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : show())}
+        onKeyDown={(e) => {
+          if (!open) {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              show();
+            }
+            return;
+          }
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const step = e.key === "ArrowDown" ? 1 : -1;
+            setActive((i) => (i + step + options.length) % options.length);
+          } else if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            pick(options[active]);
+          } else if (e.key === "Escape" || e.key === "Tab") {
+            if (e.key === "Escape") e.preventDefault();
+            setOpen(false);
+          }
+        }}
+      >
+        {icon ?? current?.icon}
+        <span>{current?.label}</span>
+        <Glyph d={CHEVRON} size={12} />
+      </button>
+      {open && (
+        <div ref={list} className="menu" role="listbox" aria-label={label}>
+          {options.map((o, i) => (
+            <div
+              key={o.value}
+              role="option"
+              aria-selected={o.value === current?.value}
+              data-value={o.value}
+              className={`menu-opt${i === active ? " act" : ""}`}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(o)}
+            >
+              {o.icon}
+              <span className="menu-lbl">{o.label}</span>
+              {o.hint && <span className="menu-hint">{o.hint}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EffortBars({ n, level }: { n: number; level: number }) {
+  return (
+    <span className="bars" aria-hidden>
+      {Array.from({ length: n }, (_, i) => (
+        <i key={i} className={i <= level ? "on" : ""} />
+      ))}
+    </span>
   );
 }
 
 /** Working directory chip: shows the folder name; opens a popover to type, browse or go back to a temporary directory. */
 function CwdPicker({ cwd, setCwd }: { cwd: string; setCwd: (v: string) => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => ref.current?.contains(e.target as Node) || setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  const ref = useDismiss(
+    open,
+    useCallback(() => setOpen(false), []),
+  );
   const name =
     cwd
       .replace(/[\\/]+$/, "")
@@ -176,66 +290,81 @@ export function StartCard() {
     >
       <h1 className="start-title">What should we make?</h1>
 
-      <div className="composer" onClick={(e) => e.target === e.currentTarget && ta.current?.focus()}>
-        <textarea
-          ref={ta}
-          autoFocus
-          rows={2}
-          value={prompt}
-          placeholder="Ask Claude to build anything…"
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              start();
-            }
-          }}
-        />
-        <div className="composer-bar">
-          <Pill label={info?.description ?? "Model"}>
-            <ProviderIcon id="claude" />
-            <select
-              aria-label="Model"
-              value={modelId}
-              onChange={(e) => {
-                setModel(e.target.value);
-                setEffort(undefined);
-              }}
-              disabled={!models.length}
-            >
-              {(models.length ? models : [{ id: "", label: welcomed ? "Claude" : "Loading models…" }]).map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </Pill>
-          {efforts.length > 0 && (
-            <>
-              <span className="composer-sep" />
-              <Pill label="Effort">
-                <select aria-label="Effort" value={shownEffort} onChange={(e) => setEffort(e.target.value as Effort)}>
-                  {efforts.map((e) => (
-                    <option key={e} value={e}>
-                      {EFFORT_LABEL[e] ?? e}
-                    </option>
-                  ))}
-                </select>
-              </Pill>
-            </>
-          )}
-          <span className="composer-sep" />
-          <CwdPicker cwd={cwd} setCwd={setCwd} />
-          <span className="composer-gap" />
+      <div className="composer bezel">
+        <div className="well" onClick={(e) => e.target === e.currentTarget && ta.current?.focus()}>
+          <textarea
+            ref={ta}
+            autoFocus
+            rows={2}
+            value={prompt}
+            placeholder="Ask Claude to build anything…"
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                start();
+              }
+            }}
+          />
           <button
-            className="send"
+            className="key send"
             type="submit"
             title="Start (Enter)"
             aria-label="Start"
             disabled={!ready || !prompt.trim()}
           >
-            {busy ? <span className="spinner" /> : <Glyph d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />}
+            {busy ? <span className="spinner" /> : <Icon name="up" />}
           </button>
+        </div>
+        <div className="composer-bar">
+          <Menu
+            label="Model"
+            testId="model"
+            value={modelId}
+            disabled={!models.length}
+            options={
+              models.length
+                ? models.map((m) => ({
+                    value: m.id,
+                    label: m.label,
+                    hint: m.description,
+                    icon: <ProviderIcon id="claude" />,
+                  }))
+                : [{ value: "", label: welcomed ? "Claude" : "Loading models…", icon: <ProviderIcon id="claude" /> }]
+            }
+            onChange={(v) => {
+              setModel(v);
+              setEffort(undefined);
+            }}
+          />
+          {efforts.length > 0 && (
+            <>
+              <span className="composer-sep" />
+              <Menu
+                label="Effort"
+                testId="effort"
+                value={shownEffort ?? ""}
+                icon={<EffortBars n={efforts.length} level={efforts.indexOf(shownEffort!)} />}
+                options={efforts.map((e, i) => ({
+                  value: e,
+                  label: EFFORT_LABEL[e] ?? e,
+                  icon: <EffortBars n={efforts.length} level={i} />,
+                }))}
+                onChange={(v) => setEffort(v as Effort)}
+              />
+            </>
+          )}
+          <span className="composer-sep" />
+          <CwdPicker cwd={cwd} setCwd={setCwd} />
+          <span className="composer-gap" />
+          <span className="hints">
+            <span>
+              <kbd>⏎</kbd>start
+            </span>
+            <span>
+              <kbd>⇧⏎</kbd>newline
+            </span>
+          </span>
         </div>
       </div>
 

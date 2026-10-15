@@ -74,7 +74,7 @@ export default defineConfig({
   test: {
     root: r("."),
     projects: [
-      { extends: true, test: { name: "unit", include: ["src/**/*.test.ts"], environment: "node" } },
+      { extends: true, test: { name: "unit", include: ["src/**/*.test.{ts,tsx}"], environment: "node" } },
       // Drives the real app against a real Claude turn; opt in with `vp run e2e`.
       ...(process.env.CADDIS_E2E
         ? [{ extends: true, test: { name: "e2e", include: ["e2e/**/*.e2e.ts"], testTimeout: 30 * 60_000 } }]

@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { CHROME_MARGIN, CHROME_Z, effectiveProps, layoutChrome, safeCssProps, type Rect } from "../../shared/chrome";
-import type { ChromeApplyResult, ChromeComponent } from "../../shared/protocol";
+import type { ChromeApplyResult, ChromeComponent, Effort } from "../../shared/protocol";
 import { TITLEBAR_H, send, setHistoryMode } from "../controller";
 import { useUi } from "../store";
-import { HistoryList, statusText } from "./History";
+import { HistoryList, Transcript, statusText } from "./History";
+import { Icon } from "./ToolIcon";
 
 /**
  * The agent-styleable chrome: the floating prompt and the history panel.
@@ -23,7 +24,7 @@ export function useViewport() {
 }
 
 const SHADOW: Record<string, string> = {
-  none: "none",
+  none: "0 0 #0000",
   soft: "0 18px 50px #0006",
   strong: "0 24px 70px #000b, 0 2px 8px #0008",
   glow: "0 0 30px color-mix(in srgb, var(--accent) 55%, transparent), 0 10px 30px #0006",
@@ -36,7 +37,8 @@ export function chromeStyle(applied: ChromeApplyResult["applied"], rect?: Rect):
     opacity: c.opacity,
     fontFamily: c.font,
     fontSize: c.fontSize,
-    boxShadow: SHADOW[c.shadow],
+    // Composed in CSS so the prompt's bevel insets survive any shadow choice.
+    ["--shadow" as string]: SHADOW[c.shadow],
     ["--accent" as string]: c.accent,
     ["--bg" as string]: c.background,
     ["--fg" as string]: c.foreground,
@@ -54,6 +56,8 @@ const useApplied = (component: ChromeComponent) =>
 export function PromptBar() {
   const applied = useApplied("prompt");
   const status = useUi((s) => s.status);
+  const statusDetail = useUi((s) => s.statusDetail);
+  const meta = usePromptMeta();
   const { w, h } = useViewport();
   const box = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -79,10 +83,19 @@ export function PromptBar() {
     send({ t: "prompt", text: t });
     setText("");
   };
+  const hints: [string, string][] = busy
+    ? [
+        ["⏎", "queue"],
+        ["esc", "stop"],
+      ]
+    : [
+        ["⏎", "send"],
+        ["⇧⏎", "newline"],
+      ];
   return (
     <form
       ref={box}
-      className="chrome-box chrome-prompt"
+      className={`chrome-box chrome-prompt bezel st-${status}`}
       data-testid="prompt"
       style={chromeStyle(applied, rect)}
       onSubmit={(e) => {
@@ -90,29 +103,82 @@ export function PromptBar() {
         submit();
       }}
     >
-      <textarea
-        ref={input}
-        rows={1}
-        value={text}
-        placeholder={busy ? "Queue a follow-up…" : "Ask for a change…"}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-      />
-      {busy && (
-        <button type="button" className="icon stop" title="Stop" onClick={() => send({ t: "interrupt" })}>
-          ■
+      <div className="well">
+        <textarea
+          ref={input}
+          rows={1}
+          value={text}
+          placeholder={busy ? "Queue a follow-up…" : "Ask for a change…"}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              submit();
+            } else if (e.key === "Escape" && busy) {
+              e.preventDefault();
+              send({ t: "interrupt" });
+            }
+          }}
+        />
+        {busy && (
+          <button type="button" className="key stop" title="Stop (Esc)" onClick={() => send({ t: "interrupt" })}>
+            <svg className="ic fill" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="7" y="7" width="10" height="10" rx="2" />
+            </svg>
+          </button>
+        )}
+        <button
+          type="submit"
+          className="key send"
+          title={busy ? "Queue (Enter)" : "Send (Enter)"}
+          disabled={!text.trim()}
+        >
+          <Icon name={busy ? "queue" : "up"} />
         </button>
-      )}
-      <button type="submit" className="icon send" title="Send (Enter)" disabled={!text.trim()}>
-        ↑
-      </button>
+      </div>
+      <div className="pfoot">
+        {meta.model && <span className="model">{meta.model}</span>}
+        {meta.effort && (
+          <span className="eff" title={`Effort: ${meta.effort}`}>
+            <span className="bars">
+              {Array.from({ length: meta.levels }, (_, i) => (
+                <i key={i} className={i <= meta.level ? "on" : ""} />
+              ))}
+            </span>
+            {meta.effort}
+          </span>
+        )}
+        {status === "tool" && <span className="busy">running {statusDetail ?? "a tool"}</span>}
+        {status === "error" && (
+          <span className="perr">{statusDetail ? `turn failed · ${statusDetail}` : "turn failed"}</span>
+        )}
+        <span className="hints">
+          {hints.map(([k, l]) => (
+            <span key={l}>
+              <kbd>{k}</kbd>
+              {l}
+            </span>
+          ))}
+        </span>
+      </div>
     </form>
   );
+}
+
+/** The session's model and effort, resolved to the CLI defaults when none were chosen. */
+function usePromptMeta() {
+  const config = useUi((s) => s.config);
+  const claude = useUi((s) => s.providers.find((p) => p.id === "claude"));
+  const id = config?.model || claude?.defaultModel || "";
+  const info = claude?.models.find((m) => m.id === id);
+  const efforts: Effort[] = info?.efforts ?? [];
+  const effort = config?.effort || info?.defaultEffort || "";
+  return {
+    model: info?.label ?? id,
+    effort,
+    levels: Math.max(efforts.length, 1),
+    level: effort ? Math.max(efforts.indexOf(effort), 0) : -1,
+  };
 }
 
 /** Position of the 40px mini button at the history panel's anchor. */
@@ -132,6 +198,8 @@ function miniRect(full: Rect, anchor: string): Rect {
 export function HistoryPanel() {
   const applied = useApplied("history");
   const { history, status, statusDetail, stats } = useUi();
+  const [transcript, setTranscript] = useState<string>();
+  const closeTranscript = useCallback(() => setTranscript(undefined), []);
   const { w, h } = useViewport();
   const rect = layoutChrome("history", applied, w, h);
   if (applied.mode === "mini") {
@@ -156,7 +224,8 @@ export function HistoryPanel() {
       data-testid="history"
       style={{ ...chromeStyle(applied, rect), height: rect.height }}
     >
-      <HistoryList items={history} />
+      <HistoryList items={history} status={status} onTranscript={setTranscript} />
+      {transcript && <Transcript items={history} groupId={transcript} onClose={closeTranscript} />}
     </section>
   );
 }

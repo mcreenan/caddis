@@ -128,11 +128,14 @@ async function main() {
 
   // ---------------------------------------------------------------- 1. 3d scene
   const start = page.locator('[data-testid="start"]');
-  if (MODEL) await start.locator("select").nth(0).selectOption(MODEL);
+  if (MODEL) {
+    await start.locator('[data-testid="model"]').click();
+    await start.locator(`[role="option"][data-value="${MODEL}"]`).click();
+  }
   await start
-    .locator("select")
-    .nth(1)
-    .selectOption(EFFORT)
+    .locator('[data-testid="effort"]')
+    .click()
+    .then(() => start.locator(`[role="option"][data-value="${EFFORT}"]`).click({ timeout: 2000 }))
     .catch(() => log("effort", EFFORT, "not offered"));
   await start.locator('[data-testid="cwd"]').click();
   await start.locator("input").fill(CWD);
