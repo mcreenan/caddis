@@ -1,6 +1,6 @@
 # Caddis
 
-Caddis is a desktop app where a coding agent builds straight into the window you're looking at. Describe a page, a 2D drawing or a 3D scene, watch it appear, and keep talking to change it.
+In Caddis, a coding agent builds straight into the window you're looking at. Ask for a dashboard, a game, a data explorer or a 3D scene, watch it take shape, and keep talking until it's right. Then save it as one file to share or come back to.
 
 - **Builds live, in place.** The canvas updates as the agent edits it, without reloading, so a 3D scene keeps its camera and animation.
 - **Uses the agents you already have.** Claude, Codex, or any [Agent Client Protocol](https://agentclientprotocol.com) agent such as opencode, Gemini CLI or Cursor. If an agent is installed and signed in, it works out of the box with your existing login.
