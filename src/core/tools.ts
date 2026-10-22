@@ -45,7 +45,8 @@ const chromeProps = z
   .partial()
   .describe("Only the keys you want to change; null resets a key to base.");
 
-const DEFS: ToolDef[] = [
+/** The canvas tools every agent gets. */
+export const TOOL_DEFS: ToolDef[] = [
   { name: "resource_list", description: "List canvas resources (name, kind, size) and the current mode.", shape: {} },
   {
     name: "resource_read",
@@ -172,7 +173,7 @@ const json = (v: unknown) => JSON.stringify(v, null, 1);
 
 export function buildToolSet(s: Session): ToolSet {
   return {
-    defs: DEFS,
+    defs: TOOL_DEFS,
     async run(name, a: any) {
       try {
         switch (name) {

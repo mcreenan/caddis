@@ -10,6 +10,7 @@ In Caddis, a coding agent builds straight into the window you're looking at. Ask
 - **Pick up where you left off.** Sessions save as you go. Reopen one and the canvas, data and conversation are as you left them.
 - **Undo and redo** for the canvas and the controls.
 - **Works in a real folder.** The agent can read and edit files and run commands in a working directory you choose, or a fresh temporary one.
+- **Work together on a hub (prototype).** An optional server keeps projects of artifacts that several people can work in at once, with each project's history in git. Everyone's agents still run on their own machines and show up as "Matt's agent".
 
 ![The opening screen, asking "What should we make?" above a prompt asking for a 3D solar system, with model, effort and working-directory pickers](docs/images/start-screen.png)
 
@@ -142,6 +143,21 @@ An entry with the same `id` as a known agent (`opencode`, `gemini`, `cursor`, `g
 
 `npm run web` serves Caddis at `http://<this-machine>:5317` for browsers on your LAN or tailnet. It has **no authentication**, and Claude can run commands on this machine, so use it only on networks you trust.
 
+### Work together on a hub
+
+The hub is an optional server, and Caddis works fully without it. It holds **projects**, each with any number of artifacts, and keeps every project's history in git. Several people can work in the same artifact at once.
+
+```sh
+npm run hub      # http://<this-machine>:5318; prints the access token
+```
+
+- **Join it:** open the hub's address in a browser, or choose **Connect to a hub…** on the desktop app's start screen. Enter your name and the token.
+- **Projects and artifacts:** you see every project, can open one to see its artifacts, and can switch between artifacts from the titlebar. The titlebar also shows who else is viewing and the artifact's git history, where you can restore an earlier revision.
+- **Agents stay on your machine:** the desktop app lends its agents to the hub under your name. From a browser, run `npm run agent -- --hub http://<hub>:5318 --name <you> --token <token>` on your machine. A turn runs with your own login and in a folder on your machine, and everyone sees it as "<you>'s agent".
+- **Who a message goes to:** the recipient chip below the prompt picks one of your agents or everyone. Agents see the room's messages from before their turn, and can hand work to each other.
+
+The token is shared and names aren't verified, so use a hub only with people you trust. See [docs/HUB.md](docs/HUB.md) for how it works, the protocol and its limits.
+
 ### Settings
 
 | Variable                             | Purpose                                                                                                      |
@@ -155,7 +171,10 @@ An entry with the same `id` as a known agent (`opencode`, `gemini`, `cursor`, `g
 | `CADDIS_PERMISSION_MODE`             | Claude permission mode (default `acceptEdits`)                                                               |
 | `CADDIS_SANDBOX`                     | `0` turns off the command sandbox. Claude's commands then need pre-approval, and Codex runs with full access |
 | `CADDIS_SESSION` or `--session=<id>` | Reopen a specific session                                                                                    |
-| `HOST`, `PORT`                       | Web server address (`0.0.0.0`, `5317`)                                                                       |
+| `HOST`, `PORT`                       | Web server address (`0.0.0.0`, `5317`; the hub defaults to `5318`)                                           |
+| `CADDIS_HUB_DIR`                     | Hub: where projects and their git repositories are kept (`hub-data/`)                                        |
+| `CADDIS_HUB_TOKEN`                   | Hub: the access token (generated once and kept in the hub's directory if unset)                              |
+| `CADDIS_HUB_NAME`                    | Hub: the name people see when joining (the host name)                                                        |
 
 ## Development
 
@@ -177,6 +196,8 @@ npm run dist        # installer for this OS in dist/ (also dist:linux, dist:mac)
 | `src/canvas`   | Runtime served into the sandboxed canvas frame                 |
 | `src/core`     | Sessions, agent providers, tools and artifacts, shared by both |
 | `src/server`   | Standalone web server (`npm run web`)                          |
+| `src/hub`      | Optional hub server (`npm run hub`), see docs/HUB.md           |
+| `src/agent`    | Agent link CLI that lends this machine's agents to a hub       |
 | `src/shared`   | Types shared across processes                                  |
 | `e2e`          | End-to-end test                                                |
 

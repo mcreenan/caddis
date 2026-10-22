@@ -150,13 +150,22 @@ function Group({
 
 function Item({ item }: { item: HistoryItem }) {
   switch (item.kind) {
-    case "user":
+    case "user": {
+      // On a hub, other people's (and agents') messages sit on the left with their name.
+      const me = useUi.getState().me;
+      const other = item.by && item.by.id !== me?.id;
       return (
-        <div className="hi hi-user">
+        <div className={`hi hi-user${other ? " other" : ""}${item.by?.kind === "agent" ? " from-agent" : ""}`}>
+          {item.by && (
+            <span className="hi-from">
+              {other ? item.by.name : "you"} → {item.to ?? "everyone"}
+            </span>
+          )}
           {item.text}
           {item.attached && <span className="hi-attached">+ {item.attached}</span>}
         </div>
       );
+    }
     case "assistant":
       return <div className="hi hi-assistant" dangerouslySetInnerHTML={{ __html: miniMarkdown(item.text) }} />;
     case "thinking":
@@ -170,11 +179,13 @@ function Item({ item }: { item: HistoryItem }) {
       return null; // always rendered inside a group
     case "turn": {
       const bits = [item.ok ? "done" : `stopped${item.error ? `: ${item.error}` : ""}`];
+      if (item.by) bits.unshift(item.by.name);
       if (item.durationMs) bits.push(`${(item.durationMs / 1000).toFixed(1)}s`);
       // The SDK reports cumulative, list-price cost; meaningless on a subscription.
       const { providers, config } = useUi.getState();
       const auth = providers.find((p) => p.id === (config?.provider ?? "claude"))?.auth ?? "";
-      const metered = !/subscription/i.test(auth);
+      // On a hub the agent ran on someone's machine, whose login this window can't see.
+      const metered = !item.by && !/subscription/i.test(auth);
       if (item.costUsd && metered) bits.push(`session $${item.costUsd.toFixed(3)}`);
       return <div className={`hi hi-turn${item.ok ? "" : " bad"}`}>{bits.join(" · ")}</div>;
     }
@@ -220,6 +231,20 @@ function Pending({ since }: { since: number }) {
   );
 }
 
+/** Hub: the agent's name above its work whenever the speaker changes. */
+export function agentLabels(rows: Row[]): (string | undefined)[] {
+  let last: string | undefined;
+  return rows.map((r) => {
+    const by = r.type === "group" ? r.group.members[0]?.by : r.item.by;
+    if (!by) return undefined;
+    const kind = r.type === "group" ? "tool" : r.item.kind;
+    const show =
+      by.kind === "agent" && by.id !== last && (kind === "tool" || kind === "assistant" || kind === "thinking");
+    last = kind === "user" ? undefined : by.id;
+    return show ? by.name : undefined;
+  });
+}
+
 /** Scrolls to the end on new content unless the user has scrolled up. */
 export function HistoryList({
   items,
@@ -235,6 +260,7 @@ export function HistoryList({
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const rows = useMemo(() => buildRows(items), [items]);
+  const labels = useMemo(() => agentLabels(rows), [rows]);
   const cwd = useUi((s) => s.config?.cwd);
   const quietSince = useQuiet(status, items);
   const busy = status === "thinking" || status === "tool";
@@ -251,19 +277,29 @@ export function HistoryList({
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       }}
     >
-      {rows.map((r, i) =>
-        r.type === "group" ? (
-          <Group
-            key={r.group.id}
-            group={r.group}
-            cwd={cwd}
-            live={busy && i === rows.length - 1}
-            onTranscript={() => onTranscript?.(r.group.id)}
-          />
-        ) : (
-          <Item key={r.item.id} item={r.item} />
-        ),
-      )}
+      {rows.map((r, i) => {
+        const label = labels[i];
+        const row =
+          r.type === "group" ? (
+            <Group
+              key={r.group.id}
+              group={r.group}
+              cwd={cwd}
+              live={busy && i === rows.length - 1}
+              onTranscript={() => onTranscript?.(r.group.id)}
+            />
+          ) : (
+            <Item key={r.item.id} item={r.item} />
+          );
+        return label
+          ? [
+              <div key={`by-${i}`} className="hi-agent">
+                {label}
+              </div>,
+              row,
+            ]
+          : row;
+      })}
       {quietSince !== undefined && <Pending since={quietSince} />}
     </div>
   );

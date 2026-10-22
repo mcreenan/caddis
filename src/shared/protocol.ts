@@ -98,6 +98,8 @@ export interface CanvasEvent {
   /** emit: event name; data.*: key. */
   name: string;
   payload?: unknown;
+  /** Hub: name of the person whose page caused it. */
+  by?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,8 +226,19 @@ export interface SessionConfig {
 
 export type AgentStatus = "idle" | "thinking" | "tool" | "error";
 
-export type HistoryItem =
-  | { id: string; ts: number; kind: "user"; text: string; attached?: string }
+/** Who wrote a history item. Only set on a hub, where several people and their agents share a session. */
+export interface Author {
+  /** A person's id, or an agent host's id. */
+  id: string;
+  /** "Matt", or "Matt's agent". */
+  name: string;
+  kind: "user" | "agent";
+  /** Agents: the id of the person whose machine runs it. */
+  owner?: string;
+}
+
+export type HistoryItem = (
+  | { id: string; ts: number; kind: "user"; text: string; attached?: string; to?: string }
   | { id: string; ts: number; kind: "assistant"; text: string }
   | { id: string; ts: number; kind: "thinking"; text: string }
   | {
@@ -238,7 +251,8 @@ export type HistoryItem =
       result?: string;
     }
   | { id: string; ts: number; kind: "turn"; ok: boolean; error?: string; durationMs?: number; costUsd?: number }
-  | { id: string; ts: number; kind: "notice"; level: "info" | "error"; text: string };
+  | { id: string; ts: number; kind: "notice"; level: "info" | "error"; text: string }
+) & { by?: Author };
 
 export interface UndoInfo {
   undo: number;
@@ -272,6 +286,61 @@ export interface SessionSnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Hub: projects, artifacts, people and their agents (docs/HUB.md)
+// ---------------------------------------------------------------------------
+
+export interface HubUser {
+  id: string;
+  name: string;
+}
+
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  createdAt: number;
+  createdBy: string;
+  updatedAt: number;
+  artifacts: number;
+}
+
+/** One canvas in a project; on the hub, a session is an artifact. */
+export interface ArtifactInfo {
+  id: string;
+  projectId: string;
+  title: string;
+  mode: CanvasMode;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A coding agent running on someone's machine and connected to the hub. */
+export interface AgentInfo {
+  /** The agent host's id. */
+  id: string;
+  owner: HubUser;
+  /** "Matt's agent". */
+  label: string;
+  providers: { id: ProviderId; label: string; enabled: boolean }[];
+  /** Artifact it is working in right now. */
+  busyIn?: string;
+}
+
+/** Which agent, and which of its providers, a prompt is for. */
+export interface PromptTarget {
+  agent: string;
+  provider: ProviderId;
+}
+
+/** A commit in a project's git history that touched an artifact. */
+export interface Revision {
+  commit: string;
+  short: string;
+  author: string;
+  ts: number;
+  message: string;
+}
+
+// ---------------------------------------------------------------------------
 // Hop 1: UI <-> session core
 // ---------------------------------------------------------------------------
 
@@ -292,7 +361,8 @@ export interface FrameResult {
 export type ClientMsg =
   | { t: "hello"; v: number; sessionId?: string }
   | { t: "session.start"; config: SessionConfig; prompt: string }
-  | { t: "prompt"; text: string }
+  /** On a hub, `to` names the agent that should act on it; without it the message is for the room only. */
+  | { t: "prompt"; text: string; to?: PromptTarget }
   | { t: "interrupt" }
   | { t: "viewport"; width: number; height: number }
   // canvas frame -> core (relayed by the UI)
@@ -322,11 +392,31 @@ export type ClientMsg =
   // artifacts (web; Electron main reads and writes files itself)
   | { t: "artifact.export" }
   /** A `.caddis` file as base64. Opens as a new session; the reply is `artifact.opened`. */
-  | { t: "artifact.import"; data: string; name?: string };
+  | { t: "artifact.import"; data: string; name?: string }
+  // hub only (see src/shared/hub.ts and docs/HUB.md)
+  | { t: "hub.join"; token: string; name: string }
+  | { t: "project.list" }
+  | { t: "project.create"; name: string }
+  | { t: "project.open"; projectId: string }
+  | { t: "artifact.create"; projectId: string }
+  /** Leave the open artifact (back to its project). */
+  | { t: "artifact.leave" }
+  | { t: "revisions.list" }
+  | { t: "revisions.restore"; commit: string };
 
 export type ServerMsg =
-  /** `defaultCwd` is empty when each new session gets its own temporary directory. */
-  | { t: "welcome"; v: number; providers: ProviderInfo[]; defaultCwd: string; platform: "web" | "electron" }
+  /**
+   * `defaultCwd` is empty when each new session gets its own temporary directory.
+   * `hub` is set when the other end is a Caddis hub: the client must `hub.join` before anything else.
+   */
+  | {
+      t: "welcome";
+      v: number;
+      providers: ProviderInfo[];
+      defaultCwd: string;
+      platform: "web" | "electron";
+      hub?: { name: string };
+    }
   /** Provider info changed after `welcome` (e.g. per-model default efforts arrived). */
   | { t: "providers"; providers: ProviderInfo[] }
   | { t: "session.snapshot"; session: SessionSnapshot }
@@ -352,7 +442,19 @@ export type ServerMsg =
   | { t: "artifact.opened"; sessionId: string }
   /** Electron: the session was saved to `name`. */
   | { t: "artifact.saved"; name: string }
-  | { t: "error"; message: string };
+  | { t: "error"; message: string }
+  // hub only
+  | { t: "hub.joined"; user: HubUser; agents: AgentInfo[] }
+  | { t: "hub.denied"; message: string }
+  | { t: "projects"; projects: ProjectInfo[] }
+  /** The project the client has open, with its artifacts; resent when they change. */
+  | { t: "project"; project: ProjectInfo; artifacts: ArtifactInfo[] }
+  | { t: "artifact.created"; projectId: string; artifactId: string }
+  /** People viewing the open artifact. */
+  | { t: "presence"; users: HubUser[] }
+  /** Agents connected to the hub. */
+  | { t: "agents"; agents: AgentInfo[] }
+  | { t: "revisions"; revisions: Revision[] };
 
 // ---------------------------------------------------------------------------
 // Hop 2: UI <-> canvas iframe (postMessage; every message has {ch, v})

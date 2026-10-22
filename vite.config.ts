@@ -8,7 +8,7 @@ import pkg from "./package.json" with { type: "json" };
  * One config for the whole toolchain (`vp dev`, `vp build`, `vp pack`, `vp check`, `vp test`):
  * - the renderer is the Vite app (root `src/renderer`, built to `out/renderer`);
  * - vite-plugin-electron builds main and preload to `out/` and starts/restarts Electron under `vp dev`;
- * - `vp pack` builds the standalone web server to `out/server`.
+ * - `vp pack` builds the standalone web server, the hub and the agent link CLI to `out/server`.
  */
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -64,7 +64,7 @@ export default defineConfig({
   ],
 
   pack: {
-    entry: { index: r("src/server/index.ts") },
+    entry: { index: r("src/server/index.ts"), hub: r("src/hub/index.ts"), agent: r("src/agent/index.ts") },
     outDir: r("out/server"),
     platform: "node",
     format: "esm",
@@ -83,13 +83,13 @@ export default defineConfig({
   },
 
   fmt: {
-    ignorePatterns: ["out/**", "dist/**", "data/**", ".e2e/**", "package-lock.json"],
+    ignorePatterns: ["out/**", "dist/**", "data/**", "hub-data/**", ".e2e/**", "package-lock.json"],
     printWidth: 120,
     sortPackageJson: true,
   },
 
   lint: {
-    ignorePatterns: ["out/**", "dist/**", "data/**", ".e2e/**"],
+    ignorePatterns: ["out/**", "dist/**", "data/**", "hub-data/**", ".e2e/**"],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: {
       "vite-plus/prefer-vite-plus-imports": "error",

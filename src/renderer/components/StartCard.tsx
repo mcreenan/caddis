@@ -3,6 +3,7 @@ import type { Effort, ProviderInfo } from "../../shared/protocol";
 import { fileOpen, send } from "../controller";
 import { useUi } from "../store";
 import { transport } from "../transport";
+import { ConnectHubLink } from "./Hub";
 import { ProviderIcon } from "./ProviderIcon";
 import { Icon } from "./ToolIcon";
 
@@ -429,6 +430,7 @@ export function StartCard() {
           <Glyph d="M4 2h5l3 3v9H4ZM9 2v3h3" size={13} />
           Open .caddis file…
         </button>
+        <ConnectHubLink />
       </div>
 
       <div className="ideas">

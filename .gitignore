@@ -4,3 +4,4 @@ data/
 *.log
 .e2e/
 out/
+hub-data/

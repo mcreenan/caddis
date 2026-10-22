@@ -1,8 +1,8 @@
 import { effectiveProps } from "../shared/chrome";
 import { PROTOCOL_VERSION, type ClientMsg, type ServerMsg, type UiCommand } from "../shared/protocol";
 import { CanvasFrameHost } from "./canvasFrame";
-import { reduce, useUi } from "./store";
-import { transport } from "./transport";
+import { noSession, reduce, useUi } from "./store";
+import { saveHub, savedHub, transport, type HubLogin } from "./transport";
 
 /** Glue between the transport, the store and the canvas frame. */
 
@@ -40,6 +40,81 @@ export function uiCommand(cmd: UiCommand) {
 }
 
 const sessionFromUrl = () => new URLSearchParams(location.search).get("s") ?? undefined;
+const projectFromUrl = () => new URLSearchParams(location.search).get("p") ?? undefined;
+
+function setUrl(params: { p?: string; s?: string }) {
+  const url = new URL(location.href);
+  for (const k of ["p", "s"] as const) {
+    const v = params[k];
+    if (v) url.searchParams.set(k, v);
+    else url.searchParams.delete(k);
+  }
+  if (url.href !== location.href) history.replaceState(null, "", url);
+}
+
+// ---------------------------------------------------------------- hub: join, projects, artifacts
+
+/** Join with a saved or newly entered login. */
+export function hubJoin(login: HubLogin) {
+  saveHub(login);
+  useUi.setState({ hubError: undefined });
+  send({ t: "hub.join", name: login.name, token: login.token });
+}
+
+/** Desktop app: connect this window to a hub (or, with no login, back to this machine). */
+export function connectHub(login: HubLogin | undefined) {
+  saveHub(login);
+  useUi.setState({ ...noSession, phase: "connecting", hubError: undefined, project: undefined, me: undefined });
+  setUrl({});
+  transport.setHub?.(login?.url);
+}
+
+/** Leave the open artifact, if any, without a round trip. */
+function leaveArtifact() {
+  if (useUi.getState().phase === "session") send({ t: "artifact.leave" });
+  useUi.setState(noSession);
+}
+
+export function openProjects() {
+  leaveArtifact();
+  useUi.setState({ phase: "projects", project: undefined, artifacts: [] });
+  setUrl({});
+  send({ t: "project.list" });
+}
+
+export function openProject(projectId: string) {
+  leaveArtifact();
+  const same = useUi.getState().project?.id === projectId;
+  useUi.setState({ phase: "project", ...(!same && { project: undefined, artifacts: [] }) });
+  setUrl({ p: projectId });
+  send({ t: "project.open", projectId });
+}
+
+export function createProject(name: string) {
+  leaveArtifact();
+  useUi.setState({ phase: "project", project: undefined, artifacts: [] });
+  send({ t: "project.create", name });
+}
+
+export function createArtifact() {
+  const p = useUi.getState().project;
+  if (p) send({ t: "artifact.create", projectId: p.id });
+}
+
+/** Open (or switch to) an artifact in this window. */
+export const openArtifact = (artifactId: string) => send({ t: "hello", v: PROTOCOL_VERSION, sessionId: artifactId });
+
+export const listRevisions = () => send({ t: "revisions.list" });
+export const restoreRevision = (commit: string) => send({ t: "revisions.restore", commit });
+
+/** After joining: the artifact or project in the URL, else the project list. */
+function afterJoin() {
+  const s = sessionFromUrl() ?? useUi.getState().sessionId;
+  const p = projectFromUrl();
+  if (s) return openArtifact(s);
+  if (p) return openProject(p);
+  openProjects();
+}
 
 // ---------------------------------------------------------------- File: new / open / save
 
@@ -84,7 +159,9 @@ function download(name: string, base64: string) {
 
 function openSession(sessionId: string) {
   // A window still on the start card takes the session; otherwise it gets its own window/tab.
-  if (useUi.getState().phase !== "session") return send({ t: "hello", v: PROTOCOL_VERSION, sessionId });
+  // On a hub the window switches to it (a new window would be a local one).
+  if (useUi.getState().phase !== "session" || useUi.getState().hub)
+    return send({ t: "hello", v: PROTOCOL_VERSION, sessionId });
   const url = new URL(location.href);
   url.searchParams.set("s", sessionId);
   if (!window.open(url, "_blank")) location.assign(url);
@@ -93,19 +170,30 @@ function openSession(sessionId: string) {
 
 function onMessage(msg: ServerMsg) {
   reduce(msg);
+  if (msg.t === "welcome") {
+    if (!msg.hub)
+      return send({ t: "hello", v: PROTOCOL_VERSION, sessionId: useUi.getState().sessionId ?? sessionFromUrl() });
+    const login = savedHub();
+    if (login) send({ t: "hub.join", name: login.name, token: login.token });
+    else useUi.setState({ phase: "join" });
+    return;
+  }
+  if (msg.t === "hub.joined") return afterJoin();
   if (msg.t === "artifact.file") return download(msg.name, msg.data);
   if (msg.t === "artifact.opened") return openSession(msg.sessionId);
+  if (msg.t === "artifact.created") return openArtifact(msg.artifactId);
   if (msg.t === "session.snapshot") {
-    const url = new URL(location.href);
-    if (url.searchParams.get("s") !== msg.session.id) {
-      url.searchParams.set("s", msg.session.id);
-      history.replaceState(null, "", url);
-    }
+    const st = useUi.getState();
+    setUrl({ p: st.hub ? st.project?.id : undefined, s: msg.session.id });
     reportViewport();
   } else if (msg.t === "session.none" && sessionFromUrl()) {
-    const url = new URL(location.href);
-    url.searchParams.delete("s");
-    history.replaceState(null, "", url);
+    const st = useUi.getState();
+    setUrl({ p: st.hub ? (st.project?.id ?? projectFromUrl()) : undefined });
+    if (st.hub) {
+      if (st.project) openProject(st.project.id);
+      else if (projectFromUrl()) openProject(projectFromUrl()!);
+      else openProjects();
+    }
   }
   frame?.onServer(msg);
 }
@@ -119,10 +207,8 @@ function reportViewport() {
 export function startController() {
   transport.start(
     onMessage,
-    () => {
-      useUi.setState({ connected: true });
-      send({ t: "hello", v: PROTOCOL_VERSION, sessionId: useUi.getState().sessionId ?? sessionFromUrl() });
-    },
+    // The core's `welcome` says whether it is this machine or a hub; `hello` (or joining) follows it.
+    () => useUi.setState({ connected: true }),
     () => useUi.setState({ connected: false }),
   );
   window.caddis?.onUi(uiCommand);

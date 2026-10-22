@@ -11,6 +11,8 @@
     "src/preload",
     "src/core",
     "src/server",
+    "src/hub",
+    "src/agent",
     "src/shared",
     "e2e",
     "vite.config.ts",

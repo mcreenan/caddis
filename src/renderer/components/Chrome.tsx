@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { CHROME_MARGIN, CHROME_Z, effectiveProps, layoutChrome, safeCssProps, type Rect } from "../../shared/chrome";
-import type { ChromeApplyResult, ChromeComponent, Effort } from "../../shared/protocol";
+import type { ChromeApplyResult, ChromeComponent, Effort, PromptTarget } from "../../shared/protocol";
 import { TITLEBAR_H, send, setHistoryMode } from "../controller";
-import { useSessionProvider, useUi } from "../store";
+import { useMyAgents, useSessionProvider, useUi } from "../store";
 import { HistoryList, Transcript, statusText } from "./History";
 import { Icon } from "./ToolIcon";
 
@@ -53,11 +53,42 @@ const useApplied = (component: ChromeComponent) =>
     useUi((s) => s.chrome[component]),
   );
 
+interface TargetOption {
+  value: string;
+  label: string;
+  to?: PromptTarget;
+}
+
+/** Hub: who the prompt goes to, one of my agents (per provider) or everyone. Undefined off a hub. */
+function useTargets() {
+  const hub = useUi((s) => Boolean(s.hub));
+  const chosen = useUi((s) => s.target);
+  const mine = useMyAgents();
+  if (!hub) return undefined;
+  const options: TargetOption[] = [
+    ...mine.flatMap((a) =>
+      a.providers
+        .filter((p) => p.enabled)
+        .map((p) => ({
+          value: `${a.id}:${p.id}`,
+          label: `${a.label} · ${p.label}`,
+          to: { agent: a.id, provider: p.id },
+        })),
+    ),
+    { value: "room", label: "everyone" },
+  ];
+  const current = options.find((o) => o.value === chosen) ?? options[0];
+  const cycle = () => useUi.setState({ target: options[(options.indexOf(current) + 1) % options.length].value });
+  return { options, current, cycle };
+}
+
 export function PromptBar() {
   const applied = useApplied("prompt");
   const status = useUi((s) => s.status);
   const statusDetail = useUi((s) => s.statusDetail);
   const meta = usePromptMeta();
+  const targets = useTargets();
+  const to = targets?.current.to;
   const { w, h } = useViewport();
   const box = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -80,7 +111,7 @@ export function PromptBar() {
   const submit = () => {
     const t = text.trim();
     if (!t) return;
-    send({ t: "prompt", text: t });
+    send({ t: "prompt", text: t, ...(to && { to }) });
     setText("");
   };
   const hints: [string, string][] = busy
@@ -108,7 +139,15 @@ export function PromptBar() {
           ref={input}
           rows={1}
           value={text}
-          placeholder={busy ? "Queue a follow-up…" : "Ask for a change…"}
+          placeholder={
+            targets
+              ? to
+                ? `Ask ${targets.current.label.split(" · ")[0]}…`
+                : "Message everyone (no agent)…"
+              : busy
+                ? "Queue a follow-up…"
+                : "Ask for a change…"
+          }
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -137,6 +176,21 @@ export function PromptBar() {
         </button>
       </div>
       <div className="pfoot">
+        {targets && (
+          <button
+            type="button"
+            className={`ptarget${to ? "" : " room"}`}
+            title={
+              targets.options.length > 1
+                ? "Click to choose who this goes to"
+                : "Connect your agent to the hub to ask it for changes"
+            }
+            data-testid="prompt-target"
+            onClick={targets.cycle}
+          >
+            to {targets.current.label}
+          </button>
+        )}
         {meta.model && <span className="model">{meta.model}</span>}
         {meta.effort && (
           <span className="eff" title={`Effort: ${meta.effort}`}>

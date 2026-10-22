@@ -1,8 +1,11 @@
-import type { ProviderInfo, SessionConfig } from "../../shared/protocol";
+import type { Author, PromptTarget, ProviderInfo, SessionConfig } from "../../shared/protocol";
 import type { ToolSet } from "../tools";
 
-/** Normalised events a provider emits; the Session turns them into history. */
-export type ProviderEvent =
+/**
+ * Normalised events a provider emits; the Session turns them into history.
+ * `by` attributes them on a hub, where several people's agents share a session.
+ */
+export type ProviderEvent = (
   | { type: "session-id"; id: string }
   | { type: "text-delta"; messageId: string; text: string }
   | { type: "text"; messageId: string; text: string }
@@ -13,7 +16,16 @@ export type ProviderEvent =
   /** Shown in the history without ending the turn (e.g. a resume that fell back to a fresh conversation). */
   | { type: "notice"; level: "info" | "error"; text: string }
   | { type: "turn-end"; ok: boolean; error?: string; durationMs?: number; costUsd?: number }
-  | { type: "fatal"; error: string };
+  /** A turn started without a prompt from this session's UI (a queued turn on a hub). */
+  | { type: "busy"; detail?: string }
+  | { type: "fatal"; error: string }
+) & { by?: Author };
+
+/** Who a message is from and which agent should act on it (hub sessions; local providers ignore it). */
+export interface TurnMeta {
+  by?: Author;
+  to?: PromptTarget;
+}
 
 export interface ProviderContext {
   config: SessionConfig;
@@ -28,7 +40,7 @@ export interface ProviderContext {
 }
 
 export interface AgentRun {
-  send(text: string): void;
+  send(text: string, meta?: TurnMeta): void;
   interrupt(): Promise<void>;
   close(): void;
 }
