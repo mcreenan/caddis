@@ -37,6 +37,8 @@ export interface HubOptions {
   dir: string;
   token: string;
   name: string;
+  /** Quiet time before changes made outside an agent's turn are committed. */
+  commitDelayMs?: number;
 }
 
 interface Open {
@@ -183,6 +185,7 @@ export class Hub {
         const o = this.opened.get(artifactId);
         if (o) {
           // One commit per turn: whatever came before it, then the turn's own changes.
+          clearTimeout(o.timer);
           if (o.pending || !active) void this.commit(o).catch((e) => console.warn("[hub] commit failed:", e));
           if (active) o.pending = { author: agent.label, notes: request ? [firstLine(request)] : [] };
         }
@@ -214,17 +217,21 @@ export class Hub {
     return o;
   }
 
-  /** Remember who changed an artifact (and why) for its next commit. */
+  /**
+   * Remember who changed an artifact (and why) for its next commit. The first author since the last
+   * commit keeps it: during an agent's turn, the page's own writes still belong to that turn.
+   */
   private touch(o: Open, author: string, note?: string) {
     o.pending ??= { author, notes: [] };
-    o.pending.author = author;
     if (note && !o.pending.notes.includes(note)) o.pending.notes.push(note);
   }
 
-  private commitSoon(o: Open, ms = COMMIT_DEBOUNCE_MS) {
+  private commitSoon(o: Open, ms = this.o.commitDelayMs ?? COMMIT_DEBOUNCE_MS) {
     clearTimeout(o.timer);
     if (o.room.busy) return; // the turn's end commits
-    o.timer = setTimeout(() => void this.commit(o).catch((e) => console.warn("[hub] commit failed:", e)), ms);
+    o.timer = setTimeout(() => {
+      if (!o.room.busy) void this.commit(o).catch((e) => console.warn("[hub] commit failed:", e));
+    }, ms);
   }
 
   /** Commit the artifact as it is now, attributed to whoever changed it since the last commit. */
@@ -232,8 +239,7 @@ export class Hub {
     clearTimeout(o.timer);
     const p = o.pending ?? { author: "Caddis hub", notes: [] };
     o.pending = undefined;
-    const title = o.session.title;
-    const msg = p.notes.length ? `${p.author}: ${p.notes.join("; ")}`.slice(0, 200) : `${p.author}: update ${title}`;
+    const msg = p.notes.length ? p.notes.join("; ").slice(0, 200) : `Update ${o.session.title}`;
     const commit = await this.store.commitArtifact(o.projectId, o.session.state, msg, gitAuthor(p.author));
     if (commit) this.sendProject(o.projectId);
     return commit;
@@ -358,7 +364,7 @@ export class Hub {
           if (!text) return;
           const by = client.user!;
           if (!msg.to) {
-            this.touch(o, user.name, "message");
+            this.touch(o, user.name, `"${firstLine(text)}"`);
             return s.prompt(text, { by, room: true });
           }
           const agent = this.agentConns.get(String(msg.to.agent));
@@ -384,6 +390,7 @@ export class Hub {
           if (!COMMIT_RE.test(commit)) return fail("bad revision");
           if (o.room.busy) return fail("wait for the agent's turn to finish before restoring");
           const r = await this.store.readRevision(o.projectId, s.id, commit);
+          if (o.pending) await this.commit(o); // earlier changes keep their own author
           s.replaceCanvas(`restore ${commit.slice(0, 7)}`, r.mode, r.resources, r.data);
           this.touch(o, user.name, `Restore ${commit.slice(0, 7)}`);
           await this.commit(o);

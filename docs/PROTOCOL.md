@@ -4,6 +4,8 @@ The source of truth is [`src/shared/protocol.ts`](../src/shared/protocol.ts), an
 
 Bump `PROTOCOL_VERSION` on any breaking change. The core rejects a `hello` that carries a different version.
 
+The optional hub speaks this protocol too. It adds a join step, project and revision messages, and an agent link for agents on people's own machines; see [HUB.md](HUB.md).
+
 ```
  Electron BrowserWindow (or a browser tab)                 session core (Electron main, or src/server)
 ┌──────────────────────────────────────────────┐  hop 1   ┌──────────────────────────────────────┐

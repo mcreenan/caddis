@@ -11,12 +11,14 @@ import {
 import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { AgentLink } from "../core/agentLink";
 import { ARTIFACT_EXT } from "../core/artifact";
 import { SessionManager } from "../core/manager";
 import type { Client } from "../core/session";
 import { FRAME_HEADERS, createFrameFiles } from "../core/static";
 import type { FileCommand } from "../shared/bridge";
 import type { CanvasStats, ClientMsg, ServerMsg, UiCommand } from "../shared/protocol";
+import { relayToHub } from "./hubRelay";
 
 /**
  * Electron main: hosts the session core in-process (the same SessionManager the
@@ -38,7 +40,34 @@ protocol.registerSchemesAsPrivileged([
 
 const manager = new SessionManager(DATA, undefined, "electron");
 const serveFrame = createFrameFiles(ROOT);
-const conns = new Map<number, ReturnType<SessionManager["connect"]>>();
+type LocalConn = ReturnType<SessionManager["connect"]>;
+type HubConn = ReturnType<typeof relayToHub>;
+const conns = new Map<number, LocalConn | HubConn>();
+const isHub = (c: LocalConn | HubConn | undefined): c is HubConn => Boolean(c && "hub" in c);
+
+/**
+ * While any window is on a hub, this machine's agents are lent to it (one link per hub and name),
+ * so turns people address to "<name>'s agent" run here.
+ */
+let agentLink: { key: string; link: AgentLink } | undefined;
+function linkAgents(url: string, name: string, token: string) {
+  const key = JSON.stringify([url, name, token]);
+  if (agentLink?.key === key) return;
+  agentLink?.link.close();
+  agentLink = {
+    key,
+    link: new AgentLink({
+      url,
+      token,
+      name,
+      providers: manager.providers,
+      infos: () => manager.providerInfos(),
+      onProviders: (cb) => manager.onProviders(cb),
+      dataDir: DATA,
+      cwd: process.env.CADDIS_DEFAULT_CWD,
+    }).start(),
+  };
+}
 
 function rendererUrl(sessionId?: string) {
   const q = sessionId ? `?s=${encodeURIComponent(sessionId)}` : "";
@@ -138,9 +167,15 @@ function processStats(wc: WebContents): CanvasStats["process"] {
   };
 }
 
-ipcMain.handle("ac:connect", (e) => {
+ipcMain.handle("ac:connect", (e, hub?: string) => {
   dropConn(e.sender);
-  conns.set(e.sender.id, manager.connect(clientFor(e.sender)));
+  const client = clientFor(e.sender);
+  conns.set(
+    e.sender.id,
+    typeof hub === "string" && hub
+      ? relayToHub(hub, client, (name, token) => name && token && linkAgents(hub, name, token))
+      : manager.connect(client),
+  );
 });
 ipcMain.on("ac:msg", (e, msg: ClientMsg) => void conns.get(e.sender.id)?.receive(msg));
 ipcMain.on("ac:newWindow", () => createWindow());
@@ -172,8 +207,25 @@ function fileCommand(cmd: FileCommand, win?: BrowserWindow | null) {
   if (win) return saveArtifact(win, cmd === "saveAs");
 }
 
+/** On a hub, File → Save downloads the open artifact as a `.caddis` file. */
+async function saveHubArtifact(win: BrowserWindow, conn: HubConn) {
+  const f = await conn.exportArtifact();
+  if (!f) return void dialog.showMessageBox(win, { type: "info", message: "Open an artifact to save it." });
+  const r = await dialog.showSaveDialog(win, {
+    title: "Save Caddis artifact",
+    defaultPath: path.join(lastDir ?? app.getPath("documents"), f.name),
+    filters: FILTERS,
+  });
+  if (r.canceled || !r.filePath) return;
+  const file = r.filePath.endsWith(`.${ARTIFACT_EXT}`) ? r.filePath : `${r.filePath}.${ARTIFACT_EXT}`;
+  await writeFile(file, Buffer.from(f.data, "base64"));
+  lastDir = path.dirname(file);
+}
+
 async function saveArtifact(win: BrowserWindow, saveAs: boolean) {
-  const s = conns.get(win.webContents.id)?.session;
+  const conn = conns.get(win.webContents.id);
+  if (isHub(conn)) return saveHubArtifact(win, conn);
+  const s = conn?.session;
   if (!s)
     return void dialog.showMessageBox(win, {
       type: "info",
@@ -217,6 +269,13 @@ async function openArtifact(win?: BrowserWindow | null, file?: string) {
     const r = await (win ? dialog.showOpenDialog(win, opts) : dialog.showOpenDialog(opts));
     if (r.canceled || !r.filePaths[0]) return;
     file = r.filePaths[0];
+  }
+  const conn = win && !win.isDestroyed() ? conns.get(win.webContents.id) : undefined;
+  if (isHub(conn)) {
+    // On a hub, the file becomes a new artifact in the open project.
+    const data = (await readFile(file)).toString("base64");
+    lastDir = path.dirname(file);
+    return conn.receive({ t: "artifact.import", data, name: path.basename(file) });
   }
   try {
     const s = await manager.importArtifact(await readFile(file), { path: file });
@@ -329,4 +388,7 @@ void app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-app.on("before-quit", () => manager.shutdown());
+app.on("before-quit", () => {
+  agentLink?.link.close();
+  manager.shutdown();
+});

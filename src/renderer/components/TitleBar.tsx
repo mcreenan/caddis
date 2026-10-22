@@ -1,9 +1,25 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { HOST_Z } from "../../shared/chrome";
 import { TITLE_MAX, type UiCommand } from "../../shared/protocol";
-import { fileNew, fileOpen, fileSave, historyMini, renameSession, uiCommand } from "../controller";
+import {
+  connectHub,
+  createArtifact,
+  fileNew,
+  fileOpen,
+  fileSave,
+  historyMini,
+  listRevisions,
+  openArtifact,
+  openProject,
+  openProjects,
+  renameSession,
+  restoreRevision,
+  uiCommand,
+} from "../controller";
 import { useSessionProvider, useUi } from "../store";
+import { transport } from "../transport";
 import { statusText } from "./History";
+import { Avatar, ago } from "./Hub";
 
 /**
  * Host-owned titlebar, drawn in place of the OS one. The OS keeps its window
@@ -15,6 +31,7 @@ const MAC_UI = /Mac|iPhone|iPad/.test(navigator.platform);
 const mod = MAC_UI ? "⌘" : "Ctrl+";
 /** Electron on macOS fills the native menu bar instead of showing a menu button. */
 const NATIVE_MENU = window.caddis?.os === "darwin";
+const DESKTOP = transport.platform === "electron";
 
 type MenuItem = { label: string; key?: string; run: () => void; disabled?: boolean; testid?: string } | "-";
 type Menu = { label: string; items: MenuItem[] };
@@ -24,11 +41,22 @@ function useMenus(): Menu[] {
   const undo = useUi((s) => s.undo);
   const hidden = useUi((s) => s.overlayHidden);
   const mini = useUi(historyMini);
+  const hub = useUi((s) => Boolean(s.hub && s.me));
+  const inProject = useUi((s) => Boolean(s.hub && s.project));
   const cmd = (c: UiCommand) => () => uiCommand(c);
+  const hubItems: MenuItem[] = hub
+    ? [
+        { label: "All projects", run: openProjects, testid: "menu-projects" },
+        { label: "New artifact", run: createArtifact, disabled: !inProject },
+        ...(DESKTOP ? [{ label: "Disconnect from hub", run: () => connectHub(undefined) }] : []),
+        "-",
+      ]
+    : [];
   return [
     {
       label: "File",
       items: [
+        ...hubItems,
         { label: "New window", key: window.caddis ? `${mod}N` : undefined, run: fileNew },
         { label: "Open…", key: `${mod}O`, run: fileOpen },
         "-",
@@ -157,6 +185,120 @@ function Icon({ d, children }: { d?: string; children?: ReactNode }) {
       {d && <path d={d} />}
       {children}
     </svg>
+  );
+}
+
+/** Hub: the project and a switcher for its artifacts, left of the title. */
+function HubNav() {
+  const project = useUi((s) => s.project);
+  const artifacts = useUi((s) => s.artifacts);
+  const current = useUi((s) => s.sessionId);
+  const [open, setOpen] = useState(false);
+  const close = useMemo(() => () => setOpen(false), []);
+  const ref = useDismiss(open, close);
+  if (!project) return null;
+  return (
+    <div ref={ref} className="tb-menu tb-hubnav" data-testid="hub-nav">
+      <button className="tb-crumb" title="Back to the project" onClick={() => openProject(project.id)}>
+        {project.name}
+      </button>
+      <span className="tb-crumb-sep">›</span>
+      <button
+        className={`tb-btn tb-switch${open ? " on" : ""}`}
+        title="Switch artifact"
+        aria-label="Switch artifact"
+        aria-expanded={open}
+        data-testid="artifact-switch"
+        onClick={() => setOpen(!open)}
+      >
+        <Icon d="M5 7l4 4 4-4" />
+      </button>
+      {open && (
+        <div className="tb-pop" role="menu">
+          {artifacts.map((a) => (
+            <button
+              key={a.id}
+              role="menuitem"
+              className={a.id === current ? "cur" : undefined}
+              onClick={() => {
+                setOpen(false);
+                if (a.id !== current) openArtifact(a.id);
+              }}
+            >
+              {a.title} <kbd>{a.mode}</kbd>
+            </button>
+          ))}
+          <hr />
+          <button role="menuitem" onClick={() => (setOpen(false), createArtifact())}>
+            New artifact
+          </button>
+          <button role="menuitem" onClick={() => (setOpen(false), openProjects())}>
+            All projects
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Hub: who's here, and the artifact's git history. */
+function HubControls() {
+  const viewers = useUi((s) => s.viewers);
+  const me = useUi((s) => s.me);
+  const revisions = useUi((s) => s.revisions);
+  const busy = useUi((s) => s.status === "thinking" || s.status === "tool");
+  const [open, setOpen] = useState(false);
+  const close = useMemo(() => () => setOpen(false), []);
+  const ref = useDismiss(open, close);
+  return (
+    <div className="tb-group tb-hub">
+      <span className="tb-people" data-testid="presence">
+        {viewers.map((u) => (
+          <Avatar key={u.id} id={u.id} name={u.name} title={u.id === me?.id ? `${u.name} (you)` : u.name} />
+        ))}
+      </span>
+      <div ref={ref} className="tb-menu">
+        <button
+          className={`tb-btn${open ? " on" : ""}`}
+          title="Revision history"
+          aria-label="Revision history"
+          data-testid="revisions"
+          onClick={() => {
+            if (!open) listRevisions();
+            setOpen(!open);
+          }}
+        >
+          <Icon d="M3.5 9a5.5 5.5 0 1 0 1.6-3.9M3.5 3.5v2.5H6M9 6v3.2l2 1.3" />
+        </button>
+        {open && (
+          <div className="tb-pop tb-revs" role="menu" data-testid="revision-list">
+            <div className="tb-revs-hd">History · saved in git</div>
+            {!revisions && <div className="muted tb-revs-empty">Loading…</div>}
+            {revisions?.map((r, i) => (
+              <div key={r.commit} className="tb-rev">
+                <div className="tb-rev-msg" title={r.message}>
+                  {r.message}
+                </div>
+                <div className="tb-rev-meta">
+                  <code>{r.short}</code> {r.author} · {ago(r.ts)}
+                </div>
+                {i > 0 && (
+                  <button
+                    className="link"
+                    disabled={busy}
+                    title={busy ? "Wait for the agent to finish" : "Put the canvas and data back as they were here"}
+                    onClick={() => restoreRevision(r.commit)}
+                  >
+                    Restore
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <span className="tb-sep" />
+    </div>
   );
 }
 
@@ -448,6 +590,7 @@ function Title() {
 
 export function TitleBar() {
   const inSession = useUi((s) => s.phase === "session");
+  const onHub = useUi((s) => Boolean(s.hub && s.me));
   const os = window.caddis?.os;
   return (
     <header
@@ -457,7 +600,9 @@ export function TitleBar() {
     >
       {!NATIVE_MENU && <AppMenu />}
       {inSession && <SessionControls />}
+      {inSession && onHub && <HubNav />}
       <Title />
+      {inSession && onHub && <HubControls />}
       {inSession && <Status />}
     </header>
   );

@@ -6,7 +6,7 @@ const api: CaddisBridge = {
   platform: "electron",
   os: process.platform,
   frameUrl: "canvas://app/frame/index.html",
-  connect: () => ipcRenderer.invoke("ac:connect"),
+  connect: (hub) => ipcRenderer.invoke("ac:connect", hub),
   send: (msg) => ipcRenderer.send("ac:msg", msg),
   onMessage(cb) {
     const h = (_e: IpcRendererEvent, m: ServerMsg) => cb(m);

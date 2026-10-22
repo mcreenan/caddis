@@ -20,6 +20,7 @@ beforeAll(async () => {
     dir: path.join(dir, "hub"),
     token: TOKEN,
     name: "test hub",
+    commitDelayMs: 50,
     host: "127.0.0.1",
     port: 0,
     root: path.resolve("."),
@@ -66,7 +67,13 @@ async function ui() {
 }
 
 /** A provider that writes `html` to the canvas each turn, recording the prompts it gets. */
-function fakeProvider(html: (n: number) => string, prompts: string[], extra?: (ctx: ProviderContext) => Promise<void>) {
+function fakeProvider(
+  html: (n: number) => string,
+  prompts: string[],
+  extra?: (ctx: ProviderContext) => Promise<void>,
+  /** Time before its first event, like a model thinking. */
+  thinkMs = 0,
+) {
   const info: ProviderInfo = { id: "claude", label: "Claude", enabled: true, models: [] };
   const provider: AgentProvider = {
     discover: async () => info,
@@ -76,6 +83,7 @@ function fakeProvider(html: (n: number) => string, prompts: string[], extra?: (c
           prompts.push(text);
           void (async () => {
             const n = prompts.length;
+            if (thinkMs) await new Promise((r) => setTimeout(r, thinkMs));
             ctx.emit({ type: "tool-start", id: `tool${n}`, name: "mcp__canvas__resource_write", input: {} });
             const r = await ctx.tools.run("resource_write", { name: "index.html", content: html(n) });
             ctx.emit({ type: "tool-end", id: `tool${n}`, result: r.text, isError: Boolean(r.isError) });
@@ -200,7 +208,7 @@ test("people share an artifact, prompt their own agents, hand off between agents
     if (revisions.some((r) => r.author === "Lily's agent")) break;
     await new Promise((r) => setTimeout(r, 100));
   }
-  expect(revisions.map((r) => r.message)).toEqual(
+  expect(revisions.map((r) => `${r.author}: ${r.message}`)).toEqual(
     expect.arrayContaining([
       "Matt's agent: Make a heading",
       "Matt's agent: Ask Lily's agent for the footer",
@@ -225,4 +233,38 @@ test("people share an artifact, prompt their own agents, hand off between agents
 
   matt.close();
   lily.close();
+});
+
+test("a slow turn is one commit by the agent, however long it takes", async () => {
+  const sam = await ui();
+  sam.send({ t: "hub.join", token: TOKEN, name: "Sam" });
+  await sam.next("hub.joined");
+  sam.send({ t: "project.create", name: "Slow" });
+  const project = (await sam.next("project", (m) => m.project.name === "Slow")).project;
+  sam.send({ t: "artifact.create", projectId: project.id });
+  const { artifactId } = await sam.next("artifact.created");
+  sam.send({ t: "hello", v: PROTOCOL_VERSION, sessionId: artifactId });
+  await sam.next("session.snapshot");
+  const prompts: string[] = [];
+  // Thinks past the commit debounce, writes, keeps working past it again, then writes again.
+  const link = await agent(
+    "Sam",
+    fakeProvider(
+      () => "<p>first</p>",
+      prompts,
+      async (ctx) => {
+        await new Promise((r) => setTimeout(r, 400));
+        await ctx.tools.run("resource_write", { name: "index.html", content: "<p>second</p>" });
+      },
+      300,
+    ),
+  );
+  sam.send({ t: "prompt", text: "Take your time", to: { agent: link.hostId!, provider: "claude" } });
+  await sam.next("history.append", (m) => m.item.kind === "turn");
+  await new Promise((r) => setTimeout(r, 300));
+  const from = sam.msgs.length;
+  sam.send({ t: "revisions.list" });
+  const revs = (await sam.next("revisions", () => true, from)).revisions;
+  expect(revs.map((r) => `${r.author}: ${r.message}`)).toEqual(["Sam's agent: Take your time", "Sam: Create artifact"]);
+  sam.close();
 });

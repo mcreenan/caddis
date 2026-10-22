@@ -2,12 +2,17 @@ import { create } from "zustand";
 import {
   emptyCanvas,
   emptyChrome,
+  type AgentInfo,
   type AgentStatus,
+  type ArtifactInfo,
   type CanvasState,
   type CanvasStats,
   type ChromeState,
   type HistoryItem,
+  type HubUser,
+  type ProjectInfo,
   type ProviderInfo,
+  type Revision,
   type ServerMsg,
   type SessionConfig,
   type SessionTitle,
@@ -19,7 +24,8 @@ export interface UiState {
   welcomed: boolean;
   providers: ProviderInfo[];
   defaultCwd: string;
-  phase: "connecting" | "start" | "session";
+  /** `join`, `projects` and `project` only happen on a hub. */
+  phase: "connecting" | "start" | "session" | "join" | "projects" | "project";
   sessionId?: string;
   config?: SessionConfig;
   status: AgentStatus;
@@ -42,6 +48,22 @@ export interface UiState {
   renaming: boolean;
   /** Short-lived notice ("Saved x.caddis"). */
   toast?: string;
+
+  // hub (docs/HUB.md)
+  /** Set while connected to a hub. */
+  hub?: { name: string };
+  me?: HubUser;
+  hubError?: string;
+  agents: AgentInfo[];
+  projects: ProjectInfo[];
+  /** The open project, and its artifacts. */
+  project?: ProjectInfo;
+  artifacts: ArtifactInfo[];
+  /** People viewing the open artifact. */
+  viewers: HubUser[];
+  revisions?: Revision[];
+  /** Who the prompt goes to: "room", or "<agent id>:<provider>". Unset: the person's own agent. */
+  target?: string;
 }
 
 export const useUi = create<UiState>(() => ({
@@ -58,7 +80,29 @@ export const useUi = create<UiState>(() => ({
   chrome: emptyChrome(),
   undo: { undo: 0, redo: 0 },
   overlayHidden: false,
+  agents: [],
+  projects: [],
+  artifacts: [],
+  viewers: [],
 }));
+
+/** Session state reset when leaving an artifact (hub). */
+export const noSession = {
+  sessionId: undefined,
+  config: undefined,
+  status: "idle",
+  statusDetail: undefined,
+  history: [],
+  canvas: emptyCanvas(),
+  data: {},
+  chrome: emptyChrome(),
+  undo: { undo: 0, redo: 0 },
+  stats: undefined,
+  file: undefined,
+  title: undefined,
+  viewers: [],
+  revisions: undefined,
+} satisfies Partial<UiState>;
 
 const set = useUi.setState;
 
@@ -66,11 +110,35 @@ const set = useUi.setState;
 export function reduce(msg: ServerMsg) {
   switch (msg.t) {
     case "welcome":
-      return set({ welcomed: true, providers: msg.providers, defaultCwd: msg.defaultCwd });
+      return set({
+        welcomed: true,
+        providers: msg.providers,
+        defaultCwd: msg.defaultCwd,
+        hub: msg.hub,
+        ...(!msg.hub && { me: undefined, agents: [], projects: [], project: undefined, artifacts: [] }),
+      });
+    case "hub.joined":
+      return set({ me: msg.user, agents: msg.agents, hubError: undefined });
+    case "hub.denied":
+      return set({ phase: "join", hubError: msg.message, me: undefined });
+    case "agents":
+      return set({ agents: msg.agents });
+    case "projects":
+      return set({ projects: msg.projects });
+    case "project":
+      return set({ project: msg.project, artifacts: msg.artifacts });
+    case "presence":
+      return set({ viewers: msg.users });
+    case "revisions":
+      return set({ revisions: msg.revisions });
     case "providers":
       return set({ providers: msg.providers });
     case "session.none":
-      return set({ phase: "start", sessionId: undefined });
+      return set((st) =>
+        st.hub
+          ? { ...noSession, phase: st.project ? "project" : "projects" }
+          : { phase: "start", sessionId: undefined },
+      );
     case "session.snapshot": {
       const s = msg.session;
       return set({
@@ -145,6 +213,13 @@ export function reduce(msg: ServerMsg) {
       return set({ error: msg.message });
   }
 }
+
+/** Agents connected to the hub that belong to me. */
+export const useMyAgents = () => {
+  const me = useUi((s) => s.me);
+  const agents = useUi((s) => s.agents);
+  return me ? agents.filter((a) => a.owner.id === me.id) : [];
+};
 
 /** The open session's provider info, if discovery knows it. */
 export const useSessionProvider = () =>

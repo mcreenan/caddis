@@ -11,18 +11,46 @@ export interface Transport {
   newWindow(): void;
   /** Electron only: main runs Open/Save with native dialogs. The web build goes through the core instead. */
   file?(cmd: "open" | "save" | "saveAs"): void;
+  /** Electron only: connect this window to the hub at `url` (main relays to it), or back to the local core. */
+  setHub?(url: string | undefined): void;
+}
+
+/** How to join a hub; kept in localStorage. `url` is only needed by the desktop app (a browser is served by the hub). */
+export interface HubLogin {
+  url?: string;
+  name: string;
+  token: string;
+}
+
+const HUB_KEY = "caddis.hub";
+
+export function savedHub(): HubLogin | undefined {
+  try {
+    const v = JSON.parse(localStorage.getItem(HUB_KEY) ?? "null");
+    return v && typeof v.name === "string" && typeof v.token === "string" ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveHub(login: HubLogin | undefined) {
+  if (login) localStorage.setItem(HUB_KEY, JSON.stringify(login));
+  else localStorage.removeItem(HUB_KEY);
 }
 
 function electronTransport(): Transport {
   const b = window.caddis!;
+  let opened = () => {};
   return {
     platform: "electron",
     frameUrl: b.frameUrl,
     send: (msg) => b.send(msg),
     start(onMessage, onOpen) {
+      opened = onOpen;
       b.onMessage(onMessage);
-      void b.connect().then(onOpen);
+      void b.connect(savedHub()?.url).then(onOpen);
     },
+    setHub: (url) => void b.connect(url).then(() => opened()),
     pickDirectory: () => b.pickDirectory(),
     newWindow: () => b.newWindow(),
     file: (cmd) => b.file(cmd),
