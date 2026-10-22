@@ -11,6 +11,7 @@ import {
   emptyChrome,
   resourceKind,
   type AgentStatus,
+  type Author,
   type CanvasEvent,
   type CanvasMode,
   type CanvasState,
@@ -24,6 +25,7 @@ import {
   type FrameRequest,
   type FrameResult,
   type HistoryItem,
+  type PromptTarget,
   type Resource,
   type ServerMsg,
   type SessionConfig,
@@ -40,7 +42,7 @@ import {
   type ParsedArtifact,
 } from "./artifact";
 import { applyPatch } from "./dom";
-import type { AgentProvider, AgentRun, ProviderEvent } from "./providers/types";
+import type { AgentProvider, AgentRun, ProviderEvent, TurnMeta } from "./providers/types";
 import { canvasSystemPrompt } from "./systemPrompt";
 import { buildToolSet, type ToolOutput } from "./tools";
 
@@ -61,6 +63,18 @@ export interface Client {
   capture?: (maxWidth: number) => Promise<{ data: string; mimeType: string } | undefined>;
   /** Electron: OS-level metrics for the canvas frame's process. */
   processStats?: () => Promise<CanvasStats["process"] | undefined>;
+  /** Hub: the person on the other end, once they have joined. */
+  user?: Author;
+}
+
+export interface PromptOptions {
+  by?: Author;
+  /** Hub: the agent that should act on the message. */
+  to?: PromptTarget;
+  /** Shown on the message: the agent it was addressed to. */
+  toLabel?: string;
+  /** Hub: a message for the people in the room; no agent acts on it. */
+  room?: boolean;
 }
 
 /** One undoable step: the *previous* values of whatever it changed. Spans canvas and chrome. */
@@ -129,6 +143,10 @@ export class Session {
   private itemFor = new Map<string, string>();
   private saveTimer?: NodeJS.Timeout;
   private tools = buildToolSet(this);
+  /** Called whenever persisted state changes (the hub commits to git from here). */
+  onChange?: () => void;
+  /** Picks the viewer that answers frame requests (the hub prefers the acting agent's owner). */
+  viewerFor?: (ready: Client[]) => Client | undefined;
 
   // live-viewer state (not persisted)
   private primary?: Client;
@@ -256,6 +274,11 @@ export class Session {
     return this.d.id;
   }
 
+  /** The persisted state, read-only (the hub writes it to git). */
+  get state(): Readonly<Persisted> {
+    return this.d;
+  }
+
   get title() {
     return sessionTitle(this.d);
   }
@@ -353,6 +376,7 @@ export class Session {
   private save() {
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.flush(), 200);
+    this.onChange?.();
   }
 
   flush() {
@@ -365,9 +389,18 @@ export class Session {
 
   // ================================================================ agent
 
-  prompt(text: string) {
-    const attached = this.takeActivity();
-    this.addItem({ id: randomUUID(), ts: Date.now(), kind: "user", text, attached: attached?.label });
+  prompt(text: string, opts: PromptOptions = {}) {
+    const attached = opts.room ? undefined : this.takeActivity();
+    this.addItem({
+      id: randomUUID(),
+      ts: Date.now(),
+      kind: "user",
+      text,
+      attached: attached?.label,
+      ...(opts.by && { by: opts.by }),
+      ...(opts.toLabel && { to: opts.toLabel }),
+    });
+    if (opts.room) return;
     this.setStatus("thinking");
     if (!this.run) {
       // A temporary working directory may have been cleared (e.g. by a reboot) since the session was made.
@@ -382,7 +415,8 @@ export class Session {
         emit: (e) => this.onProviderEvent(e),
       });
     }
-    this.run.send(attached ? `${attached.text}\n\n${text}` : text);
+    const meta: TurnMeta | undefined = opts.by || opts.to ? { by: opts.by, to: opts.to } : undefined;
+    this.run.send(attached ? `${attached.text}\n\n${text}` : text, meta);
   }
 
   async interrupt() {
@@ -412,6 +446,7 @@ export class Session {
   }
 
   private onProviderEvent(e: ProviderEvent) {
+    const by = e.by ? { by: e.by } : {};
     switch (e.type) {
       case "session-id":
         this.d.providerSessionId = e.id;
@@ -430,7 +465,7 @@ export class Session {
         if (!existing) {
           const id = randomUUID();
           this.itemFor.set(key, id);
-          this.addItem({ id, ts: Date.now(), kind, text: e.text });
+          this.addItem({ id, ts: Date.now(), kind, text: e.text, ...by });
         } else {
           const item = this.findItem(existing);
           if (item && (item.kind === "assistant" || item.kind === "thinking")) item.text += e.text;
@@ -441,13 +476,14 @@ export class Session {
         return;
       }
       case "text":
-        this.addItem({ id: randomUUID(), ts: Date.now(), kind: "assistant", text: e.text });
+        this.addItem({ id: randomUUID(), ts: Date.now(), kind: "assistant", text: e.text, ...by });
         return;
       case "tool-start": {
         const id = randomUUID();
         this.itemFor.set(`tool:${e.id}`, id);
-        this.addItem({ id, ts: Date.now(), kind: "tool", name: e.name, input: e.input, state: "running" });
-        this.setStatus("tool", e.name.replace(/^mcp__canvas__/, ""));
+        this.addItem({ id, ts: Date.now(), kind: "tool", name: e.name, input: e.input, state: "running", ...by });
+        const tool = e.name.replace(/^mcp__canvas__/, "");
+        this.setStatus("tool", e.by ? `${tool} · ${e.by.name}` : tool);
         return;
       }
       case "tool-end": {
@@ -480,11 +516,15 @@ export class Session {
           error: e.error,
           durationMs: e.durationMs,
           costUsd: e.costUsd,
+          ...by,
         });
         this.setStatus(e.ok ? "idle" : "error", e.error);
         return;
+      case "busy":
+        this.setStatus("thinking", e.detail);
+        return;
       case "notice":
-        this.addItem({ id: randomUUID(), ts: Date.now(), kind: "notice", level: e.level, text: e.text });
+        this.addItem({ id: randomUUID(), ts: Date.now(), kind: "notice", level: e.level, text: e.text, ...by });
         return;
       case "fatal":
         this.addItem({ id: randomUUID(), ts: Date.now(), kind: "notice", level: "error", text: e.error });
@@ -684,6 +724,29 @@ export class Session {
     this.save();
   }
 
+  /** Replace the whole canvas (and optionally the data store), as one undoable step. Used to restore a revision. */
+  replaceCanvas(label: string, mode: CanvasMode, resources: Record<string, Resource>, data?: Record<string, unknown>) {
+    const prev: Record<string, Resource | null> = { ...this.d.canvas.resources };
+    for (const n of Object.keys(resources)) prev[n] ??= null;
+    this.pushUndo({ label, ts: Date.now(), mode: this.d.canvas.mode, res: prev });
+    const rev = this.d.canvas.rev + 1;
+    const next: Record<string, Resource> = {};
+    for (const [n, r] of Object.entries(resources)) {
+      this.checkName(n);
+      next[n] = { ...r, name: n, rev };
+    }
+    this.d.canvas = { mode: CANVAS_MODES.includes(mode) ? mode : "html", rev, resources: next };
+    this.broadcast({ t: "canvas.state", canvas: this.d.canvas });
+    if (data) {
+      for (const k of Object.keys(this.d.data))
+        if (!(k in data)) this.broadcast({ t: "data.changed", key: k, deleted: true, source: "user" });
+      for (const [k, v] of Object.entries(data))
+        this.broadcast({ t: "data.changed", key: k, value: v, source: "user" });
+      this.d.data = structuredClone(data);
+    }
+    this.save();
+  }
+
   async reload() {
     const rev = this.d.canvas.rev;
     this.reports.delete(rev);
@@ -761,7 +824,7 @@ export class Session {
   }
 
   frameRequest(request: FrameRequest): Promise<FrameResult> {
-    const target = this.primary ?? [...this.clients].at(-1);
+    const target = this.viewerFor?.([...this.ready]) ?? this.primary ?? [...this.clients].at(-1);
     if (!target) return Promise.resolve({ ok: false, error: "no canvas viewer is open for this session" });
     const requestId = randomUUID();
     return new Promise((resolve) => {
@@ -825,8 +888,8 @@ export class Session {
 
   // ================================================================ data store + events
 
-  private pushEvent(source: DataSource, type: CanvasEvent["type"], name: string, payload?: unknown) {
-    this.d.events.push({ seq: ++this.d.eventSeq, ts: Date.now(), source, type, name, payload });
+  private pushEvent(source: DataSource, type: CanvasEvent["type"], name: string, payload?: unknown, by?: string) {
+    this.d.events.push({ seq: ++this.d.eventSeq, ts: Date.now(), source, type, name, payload, ...(by && { by }) });
     if (this.d.events.length > EVENT_LIMIT) this.d.events.splice(0, this.d.events.length - EVENT_LIMIT);
     if (source !== "agent") {
       const ws = this.eventWaiters;
@@ -845,24 +908,24 @@ export class Session {
     return key in this.d.data ? JSON.stringify(this.d.data[key], null, 1) : `(${key} is not set)`;
   }
 
-  dataSet(key: string, value: unknown, source: DataSource, except?: Client) {
+  dataSet(key: string, value: unknown, source: DataSource, except?: Client, by?: string) {
     this.checkKey(key);
     const s = JSON.stringify(value);
     if (s === undefined) throw new Error("value must be JSON");
     if (s.length > MAX_DATA_BYTES) throw new Error(`value too large (${kb(s.length)}, max ${kb(MAX_DATA_BYTES)})`);
     const v = JSON.parse(s);
     this.d.data[key] = v;
-    this.pushEvent(source, "data.set", key, v);
+    this.pushEvent(source, "data.set", key, v, by);
     this.broadcast({ t: "data.changed", key, value: v, source }, except);
     this.save();
     return `Set ${key} (${kb(s.length)}).${this.ready.size ? "" : " No viewer open."}`;
   }
 
-  dataDelete(key: string, source: DataSource, except?: Client) {
+  dataDelete(key: string, source: DataSource, except?: Client, by?: string) {
     this.checkKey(key);
     if (!(key in this.d.data)) return `${key} was not set.`;
     delete this.d.data[key];
-    this.pushEvent(source, "data.delete", key);
+    this.pushEvent(source, "data.delete", key, undefined, by);
     this.broadcast({ t: "data.changed", key, deleted: true, source }, except);
     this.save();
     return `Deleted ${key}.`;
@@ -884,8 +947,8 @@ export class Session {
     return `Appended to ${key} (${arr.length} item(s)).`;
   }
 
-  emit(name: string, payload: unknown) {
-    this.pushEvent("canvas", "emit", String(name).slice(0, 100), payload);
+  emit(name: string, payload: unknown, by?: string) {
+    this.pushEvent("canvas", "emit", String(name).slice(0, 100), payload, by);
     this.save();
   }
 
@@ -898,10 +961,13 @@ export class Session {
     const lastSet = new Map<string, CanvasEvent>();
     for (const e of evs) if (e.type !== "emit") lastSet.set(e.name, e);
     const emits = evs.filter((e) => e.type === "emit").slice(-30);
+    const who = (e: CanvasEvent) => (e.by ? ` (by ${e.by})` : "");
     const lines = [
-      ...emits.map((e) => `emit ${e.name} ${preview(e.payload, 300)}`),
+      ...emits.map((e) => `emit ${e.name} ${preview(e.payload, 300)}${who(e)}`),
       ...[...lastSet.values()].map((e) =>
-        e.type === "data.delete" ? `data ${e.name} deleted` : `data ${e.name} = ${preview(e.payload, 300)}`,
+        e.type === "data.delete"
+          ? `data ${e.name} deleted${who(e)}`
+          : `data ${e.name} = ${preview(e.payload, 300)}${who(e)}`,
       ),
     ];
     return lines.join("\n");

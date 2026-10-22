@@ -19,6 +19,8 @@
     "electron": "node scripts/electron.mjs",
     "web": "vp build && vp pack && node out/server/index.mjs",
     "serve": "node out/server/index.mjs",
+    "hub": "vp build && vp pack && node out/server/hub.mjs",
+    "agent": "vp pack && node out/server/agent.mjs",
     "check": "vp check",
     "fix": "vp check --fix",
     "test": "vp test run",

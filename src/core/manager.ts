@@ -52,10 +52,23 @@ export class SessionManager {
   }
 
   private snapshot = () => [...this.infos.values()];
+  private readonly providerListeners = new Set<(p: ProviderInfo[]) => void>();
+
+  /** Latest info for every provider (placeholders until discovery finishes). */
+  providerInfos(): ProviderInfo[] {
+    return this.snapshot();
+  }
+
+  /** Called whenever provider info changes; returns an unsubscribe. */
+  onProviders(cb: (p: ProviderInfo[]) => void) {
+    this.providerListeners.add(cb);
+    return () => void this.providerListeners.delete(cb);
+  }
 
   private broadcastProviders() {
     const providers = this.snapshot();
     for (const c of this.clients) c.send({ t: "providers", providers });
+    for (const cb of this.providerListeners) cb(providers);
   }
 
   /** Ask one provider's host for availability, auth and models (cached; retried 30 s after a failure). */
@@ -169,62 +182,8 @@ export class SessionManager {
       }
       // Frame reports from a window without a session are harmless; drop them.
       if (!session) return msg.t.startsWith("frame.") || msg.t === "viewport" ? undefined : fail("no session");
-      const s = session;
-      switch (msg.t) {
-        case "prompt":
-          return s.prompt(String(msg.text ?? ""));
-        case "interrupt":
-          return void s.interrupt();
-        case "viewport":
-          return s.setViewport(Number(msg.width) || 0, Number(msg.height) || 0);
-        case "frame.ready":
-          return s.onFrameReady(client, msg.rev);
-        case "frame.applied":
-          return s.onApplied({ rev: msg.rev, errors: msg.errors ?? [], warnings: msg.warnings ?? [], verified: true });
-        case "frame.console":
-          return s.onConsole(msg.entries ?? []);
-        case "frame.result":
-          return s.onFrameResult(msg.requestId, msg.result);
-        case "frame.stats":
-          return s.onStats(msg.stats);
-        case "frame.data":
-          if (msg.deleted) s.dataDelete(msg.key, "canvas", client);
-          else s.dataSet(msg.key, msg.value, "canvas", client);
-          return;
-        case "frame.emit":
-          return s.emit(msg.name, msg.payload);
-        case "frame.chrome": {
-          let result;
-          try {
-            if (msg.reset) {
-              s.chromeReset(msg.component);
-              result = s.chromeSet(msg.component, {}, "canvas");
-            } else result = s.chromeSet(msg.component, msg.props ?? {}, "canvas");
-          } catch (e: any) {
-            result = { error: e?.message ?? String(e) };
-          }
-          return client.send({ t: "frame.chrome.result", requestId: msg.requestId, result });
-        }
-        case "chrome.set":
-          s.chromeSet(msg.component, msg.props ?? {}, "user");
-          return;
-        case "chrome.reset":
-          return s.chromeReset(msg.component);
-        case "undo":
-          return s.undo();
-        case "redo":
-          return s.redo();
-        case "canvas.clear":
-          return s.clearCanvas();
-        case "canvas.reload":
-          return void s.reload();
-        case "title.set":
-          return void s.setTitle(msg.title, "user");
-        case "artifact.export": {
-          const { buffer } = await s.exportArtifact();
-          return client.send({ t: "artifact.file", name: s.artifactName, data: buffer.toString("base64") });
-        }
-      }
+      if (msg.t === "prompt") return session.prompt(String(msg.text ?? ""));
+      await handleSessionMsg(session, client, msg);
     };
 
     return {
@@ -243,6 +202,84 @@ export class SessionManager {
     this.store.flushAll();
     this.mcp.close();
   }
+}
+
+/**
+ * Messages from a UI that act on its open session, shared by the local core and the hub.
+ * `prompt` is left to the caller (a hub routes it). Returns false for anything else.
+ */
+export async function handleSessionMsg(s: Session, client: Client, msg: ClientMsg): Promise<boolean> {
+  const by = client.user?.name;
+  switch (msg.t) {
+    case "interrupt":
+      await s.interrupt();
+      return true;
+    case "viewport":
+      s.setViewport(Number(msg.width) || 0, Number(msg.height) || 0);
+      return true;
+    case "frame.ready":
+      s.onFrameReady(client, msg.rev);
+      return true;
+    case "frame.applied":
+      s.onApplied({ rev: msg.rev, errors: msg.errors ?? [], warnings: msg.warnings ?? [], verified: true });
+      return true;
+    case "frame.console":
+      s.onConsole(msg.entries ?? []);
+      return true;
+    case "frame.result":
+      s.onFrameResult(msg.requestId, msg.result);
+      return true;
+    case "frame.stats":
+      s.onStats(msg.stats);
+      return true;
+    case "frame.data":
+      if (msg.deleted) s.dataDelete(msg.key, "canvas", client, by);
+      else s.dataSet(msg.key, msg.value, "canvas", client, by);
+      return true;
+    case "frame.emit":
+      s.emit(msg.name, msg.payload, by);
+      return true;
+    case "frame.chrome": {
+      let result;
+      try {
+        if (msg.reset) {
+          s.chromeReset(msg.component);
+          result = s.chromeSet(msg.component, {}, "canvas");
+        } else result = s.chromeSet(msg.component, msg.props ?? {}, "canvas");
+      } catch (e: any) {
+        result = { error: e?.message ?? String(e) };
+      }
+      client.send({ t: "frame.chrome.result", requestId: msg.requestId, result });
+      return true;
+    }
+    case "chrome.set":
+      s.chromeSet(msg.component, msg.props ?? {}, "user");
+      return true;
+    case "chrome.reset":
+      s.chromeReset(msg.component);
+      return true;
+    case "undo":
+      s.undo();
+      return true;
+    case "redo":
+      s.redo();
+      return true;
+    case "canvas.clear":
+      s.clearCanvas();
+      return true;
+    case "canvas.reload":
+      await s.reload();
+      return true;
+    case "title.set":
+      s.setTitle(msg.title, "user");
+      return true;
+    case "artifact.export": {
+      const { buffer } = await s.exportArtifact();
+      client.send({ t: "artifact.file", name: s.artifactName, data: buffer.toString("base64") });
+      return true;
+    }
+  }
+  return false;
 }
 
 /** A session whose agent isn't installed (or configured) on this machine. */
